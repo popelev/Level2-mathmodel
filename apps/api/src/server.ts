@@ -9,9 +9,17 @@ import {
   createPlanStub,
   createReadyStatus,
   createSeedLocalVars,
+  createSeedTagCatalog,
   nowIso,
 } from "./mocks.js";
-import type { LocalVar, LocalVarInput, PlanRequest, PlanStub } from "./types.js";
+import type {
+  LocalVar,
+  LocalVarInput,
+  PlanRequest,
+  PlanStub,
+  TagBinding,
+  TagCatalogEntry,
+} from "./types.js";
 
 const PORT = Number(process.env.PORT ?? process.env.MATHMODEL_PORT ?? 8090);
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -19,7 +27,29 @@ const HOST = process.env.HOST ?? "127.0.0.1";
 const localVars = new Map<string, LocalVar>(
   createSeedLocalVars().map((v) => [v.id, v]),
 );
+const tagCatalog = new Map<string, TagCatalogEntry>();
+const bindings = new Map<string, TagBinding>();
 let plan: PlanStub = createPlanStub();
+
+function catalogKey(tagId: string, deviceId: string): string {
+  return `${deviceId}\0${tagId}`;
+}
+
+function upsertCatalog(entries: TagCatalogEntry[]): {
+  inserted: number;
+  updated: number;
+  total: number;
+} {
+  let inserted = 0;
+  let updated = 0;
+  for (const entry of entries) {
+    const key = catalogKey(entry.tag_id, entry.device_id);
+    if (tagCatalog.has(key)) updated += 1;
+    else inserted += 1;
+    tagCatalog.set(key, entry);
+  }
+  return { inserted, updated, total: tagCatalog.size };
+}
 
 function send(
   res: ServerResponse,
@@ -202,6 +232,96 @@ async function handle(
       send(res, 202, plan);
       return;
     }
+  }
+
+  if (method === "POST" && path === "/api/v1/imports/level2/tags") {
+    const seed = createSeedTagCatalog();
+    const counts = upsertCatalog(seed);
+    send(res, 200, {
+      dry_run: false,
+      devices_seen: 1,
+      tags_fetched: seed.length,
+      ...counts,
+    });
+    return;
+  }
+
+  if (method === "POST" && path === "/api/v1/imports/level2/tags/preview") {
+    const seed = createSeedTagCatalog();
+    send(res, 200, {
+      dry_run: true,
+      devices_seen: 1,
+      tags_fetched: seed.length,
+      inserted: 0,
+      updated: 0,
+      total: tagCatalog.size,
+      preview: seed,
+    });
+    return;
+  }
+
+  if (method === "GET" && path === "/api/v1/imports/level2/catalog") {
+    send(res, 200, Array.from(tagCatalog.values()));
+    return;
+  }
+
+  if (path === "/api/v1/bindings") {
+    if (method === "GET") {
+      send(res, 200, Array.from(bindings.values()));
+      return;
+    }
+    if (method === "PUT") {
+      let body: unknown;
+      try {
+        body = await readJson<unknown>(req);
+      } catch {
+        send(res, 400, { error: "invalid_json" });
+        return;
+      }
+      let list: TagBinding[] = [];
+      let mode: "replace" | "upsert" = "replace";
+      if (Array.isArray(body)) {
+        list = body as TagBinding[];
+      } else if (body && typeof body === "object") {
+        const obj = body as { mode?: string; bindings?: TagBinding[] };
+        if (!Array.isArray(obj.bindings)) {
+          send(res, 400, { error: "invalid_body" });
+          return;
+        }
+        list = obj.bindings;
+        mode = obj.mode === "upsert" ? "upsert" : "replace";
+      } else {
+        send(res, 400, { error: "invalid_body" });
+        return;
+      }
+      if (mode === "replace") {
+        bindings.clear();
+      }
+      for (const b of list) {
+        if (!b?.logical_name || !b?.tag_id) {
+          send(res, 400, { error: "invalid_body" });
+          return;
+        }
+        bindings.set(b.logical_name, {
+          ...b,
+          role: b.role ?? "input",
+        });
+      }
+      send(res, 200, Array.from(bindings.values()));
+      return;
+    }
+  }
+
+  const bindingMatch = path.match(/^\/api\/v1\/bindings\/([^/]+)$/);
+  if (bindingMatch && method === "DELETE") {
+    const name = decodeURIComponent(bindingMatch[1]!);
+    if (!bindings.has(name)) {
+      notFound(res);
+      return;
+    }
+    bindings.delete(name);
+    send(res, 204, "");
+    return;
   }
 
   notFound(res);

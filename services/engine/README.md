@@ -8,8 +8,11 @@ Python package skeleton for Level2-mathmodel.
 |---------|------|
 | `level2_adapter` | Read-only client for Level2 Collector API |
 | `local_vars` | Engine-owned local variables (no PLC write) |
+| `tag_import` | Imported Level2 tag catalog + logical bindings |
 | `api` | HTTP surface matching `contracts/mathmodel/openapi.yaml` |
 | `plugins` | Technology plugins (e.g. copper electrorefining) |
+
+See [`docs/level2-import.md`](../../docs/level2-import.md) for import/bindings routes.
 
 ## Tests
 

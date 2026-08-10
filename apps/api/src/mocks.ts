@@ -4,6 +4,7 @@ import type {
   LocalVar,
   PlanStub,
   ReadyStatus,
+  TagCatalogEntry,
 } from "./types.js";
 
 export function nowIso(): string {
@@ -100,4 +101,29 @@ export function createPlanStub(
     horizon_hours: null,
     ...partial,
   };
+}
+
+export function createSeedTagCatalog(): TagCatalogEntry[] {
+  return [
+    {
+      tag_id: "CELL.01.CURRENT",
+      device_id: "rectifier-1",
+      path: "CELL.01.CURRENT",
+      datatype: "float64",
+      enabled: true,
+      writable: false,
+      interval_ms: 1000,
+      last_seen_at: nowIso(),
+    },
+    {
+      tag_id: "CELL.01.VOLTAGE",
+      device_id: "rectifier-1",
+      path: "CELL.01.VOLTAGE",
+      datatype: "float64",
+      enabled: true,
+      writable: false,
+      interval_ms: 1000,
+      last_seen_at: nowIso(),
+    },
+  ];
 }

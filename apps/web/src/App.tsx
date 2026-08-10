@@ -1,15 +1,17 @@
 import { useState } from "react";
+import { ImportPage } from "./pages/ImportPage";
 import { LiveInputsPage } from "./pages/LiveInputsPage";
 import { LocalVarsPage } from "./pages/LocalVarsPage";
 import { PlanPage } from "./pages/PlanPage";
 import { StatusPage } from "./pages/StatusPage";
 
-type Tab = "status" | "live" | "locals" | "plan";
+type Tab = "status" | "live" | "locals" | "import" | "plan";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "status", label: "Status" },
   { id: "live", label: "Live inputs" },
   { id: "locals", label: "Local variables" },
+  { id: "import", label: "Import from Level2" },
   { id: "plan", label: "Plan" },
 ];
 
@@ -41,6 +43,7 @@ export function App() {
       {tab === "status" && <StatusPage />}
       {tab === "live" && <LiveInputsPage />}
       {tab === "locals" && <LocalVarsPage />}
+      {tab === "import" && <ImportPage />}
       {tab === "plan" && <PlanPage />}
     </div>
   );

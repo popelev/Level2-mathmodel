@@ -9,6 +9,7 @@ describe("App", () => {
     expect(html).toContain("Status");
     expect(html).toContain("Live inputs");
     expect(html).toContain("Local variables");
+    expect(html).toContain("Import from Level2");
     expect(html).toContain("Plan");
   });
 });

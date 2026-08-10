@@ -23,6 +23,7 @@ UI strings, code comments, and READMEs are **English**.
 - Compose: [`deploy/platform/docker-compose.yml`](deploy/platform/docker-compose.yml) → `LEVEL2_API_URL=http://level2-collector:8080`
 - Jenkins Multibranch: `level2-mathmodel` — see [`deploy/ci/README.md`](deploy/ci/README.md)
 - Cross-repo / Jira coordination: [`docs/cross-repo-coord.md`](docs/cross-repo-coord.md)
+- Level2 tag import (catalog + bindings): [`docs/level2-import.md`](docs/level2-import.md)
 - Do not touch Level2/Jenkins images or run `docker compose down` on Level2 projects.
 
 ### Quick test (Docker, as CI)
@@ -43,5 +44,5 @@ technologies/copper_electrorefining/  # copper technology pack
 deploy/platform/           # Dockerfile + compose :8090
 deploy/ci/                 # Jenkins Multibranch notes
 scripts/lab/               # ssh helpers to level2-vm
-docs/                      # lab SSH, cross-repo / Jira
+docs/                      # lab SSH, Level2 import, cross-repo / Jira
 ```

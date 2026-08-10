@@ -52,3 +52,36 @@ export type PlanStub = {
   requested_at?: string;
   horizon_hours?: number | null;
 };
+
+export type TagCatalogEntry = {
+  tag_id: string;
+  device_id: string;
+  path?: string;
+  datatype?: string;
+  enabled?: boolean;
+  writable?: boolean;
+  interval_ms?: number;
+  node_id?: string;
+  last_seen_at?: string;
+  raw?: Record<string, unknown>;
+};
+
+export type TagBinding = {
+  logical_name: string;
+  tag_id: string;
+  device_id?: string;
+  role?: "input" | "output";
+  section_id?: string;
+  cell_id?: string;
+  signal?: string;
+};
+
+export type Level2ImportResult = {
+  dry_run: boolean;
+  devices_seen: number;
+  tags_fetched: number;
+  inserted: number;
+  updated: number;
+  total: number;
+  preview?: TagCatalogEntry[];
+};

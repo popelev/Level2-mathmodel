@@ -6,9 +6,10 @@ info:
 
     **Boundaries (Wave 0 / MVP):**
     - Reads Level2 Collector via `LEVEL2_API_URL` (read-only client).
-    - Owns only **local variables** and planning stubs — never writes to PLC / Level2.
+    - Owns **local variables**, **tag catalog/bindings** (imported from Level2), and planning stubs.
+    - Never writes to PLC / Level2.
     - Separate containers/images from Level2; default host port **8090**.
-  version: 0.1.0-draft
+  version: 0.2.0-draft
   contact:
     name: popelev / Level2-mathmodel
 
@@ -22,6 +23,8 @@ tags:
   - name: health
   - name: live
   - name: local_vars
+  - name: imports
+  - name: bindings
   - name: plan
 
 paths:
@@ -157,6 +160,118 @@ paths:
         "404":
           description: Not found
 
+  /api/v1/imports/level2/tags:
+    post:
+      tags: [imports]
+      summary: Import tags from Level2 into catalog
+      description: |
+        Read-only fetch via Level2Client (`GET /api/v1/devices`, `GET /api/v1/tags`).
+        Upserts `TagCatalogEntry` rows keyed by `tag_id` + `device_id`.
+        Requires `LEVEL2_API_URL`. Optional `LEVEL2_API_TOKEN` is forwarded as Bearer / X-API-Token.
+      responses:
+        "200":
+          description: Import counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Level2ImportResult"
+        "503":
+          description: Level2 unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Level2UnavailableError"
+
+  /api/v1/imports/level2/tags/preview:
+    post:
+      tags: [imports]
+      summary: Preview Level2 tag import (dry-run)
+      description: Same fetch/normalize as import, but does not persist catalog.
+      responses:
+        "200":
+          description: Dry-run result with preview rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Level2ImportPreview"
+        "503":
+          description: Level2 unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Level2UnavailableError"
+
+  /api/v1/imports/level2/catalog:
+    get:
+      tags: [imports]
+      summary: List imported Level2 tag catalog
+      responses:
+        "200":
+          description: Catalog entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagCatalogEntry"
+
+  /api/v1/bindings:
+    get:
+      tags: [bindings]
+      summary: List logical tag bindings
+      responses:
+        "200":
+          description: Bindings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagBinding"
+    put:
+      tags: [bindings]
+      summary: Replace or upsert bindings
+      description: |
+        Body may be a binding array (replace) or
+        `{ "mode": "replace"|"upsert", "bindings": [...] }`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/TagBinding"
+                - $ref: "#/components/schemas/TagBindingsPut"
+      responses:
+        "200":
+          description: Current bindings after write
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagBinding"
+        "400":
+          description: Invalid body
+
+  /api/v1/bindings/{logical_name}:
+    parameters:
+      - name: logical_name
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      tags: [bindings]
+      summary: Delete one binding
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
   /api/v1/plan:
     get:
       tags: [plan]
@@ -229,6 +344,117 @@ components:
         local_var_count:
           type: integer
           minimum: 0
+        tag_catalog_count:
+          type: integer
+          minimum: 0
+        binding_count:
+          type: integer
+          minimum: 0
+
+    TagCatalogEntry:
+      type: object
+      required: [tag_id, device_id]
+      properties:
+        tag_id:
+          type: string
+          description: Stable Level2 tag id
+        device_id:
+          type: string
+        path:
+          type: string
+        datatype:
+          type: string
+        enabled:
+          type: boolean
+        writable:
+          type: boolean
+        interval_ms:
+          type: integer
+        node_id:
+          type: string
+        last_seen_at:
+          type: string
+          format: date-time
+        raw:
+          type: object
+          additionalProperties: true
+          description: Optional debug snapshot from Level2 row
+
+    TagBinding:
+      type: object
+      required: [logical_name, tag_id]
+      properties:
+        logical_name:
+          type: string
+          description: Engine logical name for the bound tag
+        tag_id:
+          type: string
+        device_id:
+          type: string
+        role:
+          type: string
+          enum: [input, output]
+          default: input
+        section_id:
+          type: string
+          description: Optional copper section reference
+        cell_id:
+          type: string
+          description: Optional copper cell reference
+        signal:
+          type: string
+          description: Optional copper signal name
+
+    TagBindingsPut:
+      type: object
+      required: [bindings]
+      properties:
+        mode:
+          type: string
+          enum: [replace, upsert]
+          default: replace
+        bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/TagBinding"
+
+    Level2ImportResult:
+      type: object
+      required: [dry_run, devices_seen, tags_fetched, inserted, updated, total]
+      properties:
+        dry_run:
+          type: boolean
+          example: false
+        devices_seen:
+          type: integer
+        tags_fetched:
+          type: integer
+        inserted:
+          type: integer
+        updated:
+          type: integer
+        total:
+          type: integer
+
+    Level2ImportPreview:
+      allOf:
+        - $ref: "#/components/schemas/Level2ImportResult"
+        - type: object
+          properties:
+            preview:
+              type: array
+              items:
+                $ref: "#/components/schemas/TagCatalogEntry"
+
+    Level2UnavailableError:
+      type: object
+      required: [error, detail]
+      properties:
+        error:
+          type: string
+          example: level2_unavailable
+        detail:
+          type: string
 
     LiveInputsSummary:
       type: object

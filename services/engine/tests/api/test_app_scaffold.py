@@ -15,3 +15,6 @@ def test_create_app_is_fastapi() -> None:
     assert "/api/v1/local-vars" in paths
     assert "/api/v1/status" in paths
     assert "/api/v1/plan" in paths
+    assert "/api/v1/imports/level2/tags" in paths
+    assert "/api/v1/imports/level2/catalog" in paths
+    assert "/api/v1/bindings" in paths

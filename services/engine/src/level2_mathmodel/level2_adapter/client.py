@@ -39,11 +39,21 @@ class Level2Client:
         *,
         client: httpx.Client | None = None,
         timeout: float = 10.0,
+        api_token: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._owns_client = client is None
+        headers: dict[str, str] = {}
+        if api_token:
+            headers["Authorization"] = f"Bearer {api_token}"
+            headers["X-API-Token"] = api_token
         # Prefer injecting a Client (e.g. MockTransport) in unit tests.
-        self._client = client or httpx.Client(timeout=timeout)
+        self._client = client or httpx.Client(timeout=timeout, headers=headers)
+        if client is not None and api_token:
+            # Injected clients keep caller-owned headers; stash for documentation.
+            self._api_token = api_token
+        else:
+            self._api_token = api_token
 
     def close(self) -> None:
         if self._owns_client:

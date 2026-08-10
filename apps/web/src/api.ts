@@ -1,10 +1,13 @@
 import type {
   EngineStatus,
+  Level2ImportResult,
   LiveInputsSummary,
   LocalVar,
   LocalVarInput,
   PlanStub,
   ReadyStatus,
+  TagBinding,
+  TagCatalogEntry,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -47,5 +50,21 @@ export const api = {
     request<PlanStub>("/api/v1/plan", {
       method: "POST",
       body: JSON.stringify({ horizon_hours, notes }),
+    }),
+  importLevel2Tags: () =>
+    request<Level2ImportResult>("/api/v1/imports/level2/tags", {
+      method: "POST",
+    }),
+  listTagCatalog: () =>
+    request<TagCatalogEntry[]>("/api/v1/imports/level2/catalog"),
+  listBindings: () => request<TagBinding[]>("/api/v1/bindings"),
+  upsertBindings: (bindings: TagBinding[]) =>
+    request<TagBinding[]>("/api/v1/bindings", {
+      method: "PUT",
+      body: JSON.stringify({ mode: "upsert", bindings }),
+    }),
+  deleteBinding: (logicalName: string) =>
+    request<void>(`/api/v1/bindings/${encodeURIComponent(logicalName)}`, {
+      method: "DELETE",
     }),
 };
