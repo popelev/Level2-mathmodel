@@ -1,0 +1,45 @@
+{
+  "sections": [
+    {
+      "id": "S1",
+      "name": "Section 1",
+      "cells": [
+        {
+          "id": "S1-C01",
+          "current_a": 28000.0,
+          "voltage_v": 0.35,
+          "electrolyte": {
+            "temperature_c": 62.0,
+            "cu_gpl": 45.0,
+            "h2so4_gpl": 180.0
+          },
+          "anodes": [
+            {"id": "S1-C01-A1", "age_hours": 520.0, "mass_kg": 380.0},
+            {"id": "S1-C01-A2", "age_hours": 100.0, "mass_kg": 390.0}
+          ],
+          "cathodes": [
+            {"id": "S1-C01-K1", "age_hours": 180.0},
+            {"id": "S1-C01-K2", "age_hours": 40.0}
+          ]
+        },
+        {
+          "id": "S1-C02",
+          "current_a": 27500.0,
+          "voltage_v": 0.34,
+          "electrolyte": {
+            "temperature_c": 61.5,
+            "cu_gpl": 44.0,
+            "h2so4_gpl": 178.0
+          },
+          "anodes": [
+            {"id": "S1-C02-A1", "age_hours": 200.0, "mass_kg": 385.0}
+          ],
+          "cathodes": [
+            {"id": "S1-C02-K1", "age_hours": 200.0},
+            {"id": "S1-C02-K2", "age_hours": 190.0}
+          ]
+        }
+      ]
+    }
+  ]
+}

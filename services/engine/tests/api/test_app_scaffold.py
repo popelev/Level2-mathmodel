@@ -14,3 +14,4 @@ def test_create_app_is_fastapi() -> None:
     assert "/healthz" in paths
     assert "/api/v1/local-vars" in paths
     assert "/api/v1/status" in paths
+    assert "/api/v1/plan" in paths

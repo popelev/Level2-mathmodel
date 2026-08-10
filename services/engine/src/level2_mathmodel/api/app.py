@@ -1,4 +1,4 @@
-"""FastAPI application — health + local-vars (Wave 1)."""
+"""FastAPI application — health + local-vars + plan (Wave 2)."""
 
 from __future__ import annotations
 
@@ -9,10 +9,11 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
 from level2_mathmodel.api.local_vars import router as local_vars_router
+from level2_mathmodel.api.plan import router as plan_router
 from level2_mathmodel.local_vars import LocalVarStore
 
 SERVICE_NAME = "level2-mathmodel"
-SERVICE_VERSION = "0.1.0-draft"
+SERVICE_VERSION = "0.2.0-draft"
 
 
 def create_app(store: LocalVarStore | None = None) -> FastAPI:
@@ -34,10 +35,11 @@ def create_app(store: LocalVarStore | None = None) -> FastAPI:
         return {
             "service": SERVICE_NAME,
             "version": SERVICE_VERSION,
-            "mode": "monitoring",
+            "mode": "planning",
             "level2_api_url": os.environ.get("LEVEL2_API_URL", ""),
             "local_var_count": local_store.count(),
         }
 
     app.include_router(local_vars_router)
+    app.include_router(plan_router)
     return app
