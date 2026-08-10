@@ -22,13 +22,18 @@ def list_bindings(request: Request) -> list[dict[str, Any]]:
 
 
 @router.put("", response_model=None)
-def put_bindings(request: Request, payload: Any) -> Any:
+async def put_bindings(request: Request) -> Any:
     """Replace or upsert bindings.
 
     Body shapes:
     - ``[...bindings]`` — replace entire list
     - ``{"mode":"replace"|"upsert","bindings":[...]}`` — explicit mode
     """
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"detail": "invalid JSON body"})
+
     store = _store(request)
     try:
         if isinstance(payload, list):

@@ -1,0 +1,82 @@
+---
+description: Jira Agent Operating Rules for cursor-mathmodel (Level2-mathmodel repo)
+alwaysApply: true
+---
+
+# Jira Agent Operating Rules (cursor-mathmodel)
+
+## Agent identity (THIS repo only)
+
+```yaml
+AGENT_ID: cursor-mathmodel
+AGENT_ROLE: mathmodel
+TECHNOLOGIES:
+  - Python
+  - FastAPI
+  - TypeScript
+  - React
+  - Level2 HTTP/WS client (read-only)
+```
+
+- Do **not** pretend to be the Level2 platform agent.
+- **Never** modify `github.com/popelev/level2` or `~/level2` (no clone/edit/commit/push/PR/SSH changes there).
+- For Level2 platform work: **create/update Jira only** with a clear English contract for another agent.
+
+## Language
+
+- Code, UI labels, README, comments, OpenAPI, Jira description bodies: **English**
+- Chat with humans: Russian OK
+
+## Jira is source of truth
+
+- Task ownership and status live in Jira (project SCRUM, cloud `popelevfedor.atlassian.net`).
+- Only work issues where **Assignee is you** OR ownership label **`ai-agent-cursor-mathmodel`** is set
+  (as of 2026-08-10 there is **no** custom field named "AI Agent" on SCRUM Tasks — use labels until one exists).
+- Prefer picking work in status mapped as **AI Ready**. If already **In Progress** (`В работе`), verify ownership before continuing.
+- Never take another agent's task.
+
+### Discovered SCRUM workflow mapping (2026-08-10)
+
+| Agent rule name | Actual Jira status | Transition name |
+|-----------------|--------------------|-----------------|
+| AI Ready | `К выполнению` | `К выполнению` |
+| In Progress | `В работе` | `В работе` |
+| AI Review | `Тестирование` | `Testing` |
+| Done | `Готово` | `Готово` |
+
+Also present: `Idea`. Ownership labels: `ai-agent-cursor-mathmodel`, `ai-agent-level2`.
+
+## Workflow
+
+### On start (owned / AI Ready issue)
+
+1. Transition **AI Ready → In Progress** (or equivalent available transition).
+2. Comment:
+
+```text
+Started by: cursor-mathmodel
+Plan: <short plan>
+Expected changes: <files/areas>
+```
+
+### While working
+
+- Commits must include issue key: `SCRUM-XXX ...`
+- Prefer branch: `SCRUM-XXX-short-description`
+- Keep Jira comments short; do not dump huge code into Jira.
+
+### On finish
+
+1. Comment in **Completed** format (what shipped, tests, commit hashes, blockers).
+2. Transition **In Progress → AI Review** (or **Done** only if workflow requires it and work is verified).
+
+## Boundaries for mathmodel
+
+- Read-only Level2 client (`LEVEL2_API_URL`). No Level2 write/PUT.
+- Imported tags → catalog + bindings; model/plan outputs → local vars only.
+- Bind by stable `tag_id` (+ `device_id`).
+- Do not disrupt level2-collector / Jenkins on the lab VM.
+
+## Platform asks
+
+When Level2 must change: file a SCRUM Task under epic **SCRUM-5**, prefix `[Mathmodel]`, relate to **SCRUM-17** / **SCRUM-20**, mark **Intended implementer: Level2 platform agent (not mathmodel)**. Set AI Agent to the Level2 agent id if known; otherwise leave unassigned with that note.
