@@ -1,4 +1,4 @@
-"""Environment helpers and default trigger seeding for recalc polling."""
+"""Environment helpers and default trigger seeding for recalc watching."""
 
 from __future__ import annotations
 
@@ -10,6 +10,9 @@ from .store import TriggerStore
 
 DEFAULT_FLAG_LOGICAL_NAME = "recalc_trigger"
 DEFAULT_TRIGGER_ID = "default_recalc_trigger"
+
+WATCH_MODES = frozenset({"ws", "poll", "ws_with_poll_fallback"})
+DEFAULT_WATCH_MODE = "ws"
 
 
 def env_truthy(name: str, default: str = "") -> bool:
@@ -28,6 +31,14 @@ def poll_interval_ms_from_env(default: int = 1000) -> int:
     return max(50, value)
 
 
+def watch_mode_from_env(default: str = DEFAULT_WATCH_MODE) -> str:
+    """RECALC_WATCH_MODE: ws (preferred) | poll | ws_with_poll_fallback."""
+    raw = os.environ.get("RECALC_WATCH_MODE", default).strip().lower()
+    if raw in WATCH_MODES:
+        return raw
+    return default if default in WATCH_MODES else DEFAULT_WATCH_MODE
+
+
 def triggers_path_from_env() -> str | None:
     path = os.environ.get("RECALC_TRIGGERS_PATH", "").strip()
     return path or None
@@ -37,11 +48,11 @@ def seed_default_trigger(store: TriggerStore) -> bool:
     """If empty, seed one copper trigger from env/binding hint.
 
     Preference for the seed rule:
-    1. logical_name ``recalc_trigger`` (resolved at poll time via bindings)
+    1. logical_name ``recalc_trigger`` (resolved at poll/WS time via bindings)
     2. plus optional ``RECALC_FLAG_TAG_ID`` as fallback tag_id on the same rule
     """
     tag_id = os.environ.get("RECALC_FLAG_TAG_ID", "").strip() or None
-    # Always offer a sensible default seed when poll is enabled and store empty;
+    # Always offer a sensible default seed when watch is enabled and store empty;
     # callers decide whether to seed.
     rule = TriggerRule(
         trigger_id=DEFAULT_TRIGGER_ID,

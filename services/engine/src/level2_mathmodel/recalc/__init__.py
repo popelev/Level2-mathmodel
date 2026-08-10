@@ -1,11 +1,13 @@
-"""Multi-trigger recalculation polling (Level2 flags → handlers → local vars)."""
+"""Multi-trigger recalculation (Level2 flags via WS/poll → handlers → local vars)."""
 
 from .config import (
     DEFAULT_FLAG_LOGICAL_NAME,
+    DEFAULT_WATCH_MODE,
     env_truthy,
     poll_interval_ms_from_env,
     seed_default_trigger,
     triggers_path_from_env,
+    watch_mode_from_env,
 )
 from .handlers import (
     COPPER_PLAN_HANDLER_ID,
@@ -20,6 +22,7 @@ from .store import TriggerNotFoundError, TriggerStore
 __all__ = [
     "COPPER_PLAN_HANDLER_ID",
     "DEFAULT_FLAG_LOGICAL_NAME",
+    "DEFAULT_WATCH_MODE",
     "GENERIC_NOOP_HANDLER_ID",
     "HandlerContext",
     "HandlerRegistry",
@@ -33,4 +36,5 @@ __all__ = [
     "poll_interval_ms_from_env",
     "seed_default_trigger",
     "triggers_path_from_env",
+    "watch_mode_from_env",
 ]

@@ -558,6 +558,13 @@ components:
           type: boolean
         running:
           type: boolean
+        watch_mode:
+          type: string
+          description: ws | poll | ws_with_poll_fallback
+        ws_connected:
+          type: boolean
+        ws_reconnects:
+          type: integer
         default_poll_interval_ms:
           type: integer
         trigger_count:

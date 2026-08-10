@@ -1,20 +1,23 @@
-"""Async poll scheduler: evaluate many triggers, invoke handlers, isolate errors."""
+"""Async recalc watcher: WS subscribe and/or poll → edge detect → handlers."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 from level2_mathmodel.level2_adapter import Level2Client, Level2Error
+from level2_mathmodel.level2_adapter.models import Sample
 from level2_mathmodel.local_vars import LocalVarStore
 from level2_mathmodel.tag_import import TagImportStore
 
+from .config import DEFAULT_WATCH_MODE
 from .edge import (
     QUALITY_GOOD,
     detect_edge,
@@ -28,6 +31,7 @@ from .store import TriggerStore
 logger = logging.getLogger(__name__)
 
 Level2ClientFactory = Callable[[], Level2Client]
+SubscribeFn = Callable[..., Iterator[Sample]]
 
 
 def _utc_now_iso() -> str:
@@ -35,7 +39,12 @@ def _utc_now_iso() -> str:
 
 
 class RecalcScheduler:
-    """Poll Level2 flag tags and run registered handlers into local vars only.
+    """Watch Level2 flag tags and run registered handlers into local vars only.
+
+    Watch modes (``RECALC_WATCH_MODE``):
+    - ``ws`` — subscribe to Level2 ``/api/v1/ws/stream`` (preferred)
+    - ``poll`` — REST poll loop (legacy / explicit)
+    - ``ws_with_poll_fallback`` — WS primary; light poll while disconnected
 
     Default edge mode is rising_bool (false→true). Flag auto-clear is NOT done
     on Level2 (read-only client) — edge state is held in memory per trigger.
@@ -51,6 +60,8 @@ class RecalcScheduler:
         level2_client_factory: Level2ClientFactory | None = None,
         enabled: bool = False,
         default_poll_interval_ms: int = 1000,
+        watch_mode: str = DEFAULT_WATCH_MODE,
+        subscribe_fn: SubscribeFn | None = None,
     ) -> None:
         self.local_vars = local_vars
         self.tag_import = tag_import
@@ -59,6 +70,9 @@ class RecalcScheduler:
         self._client_factory = level2_client_factory
         self.enabled = enabled
         self.default_poll_interval_ms = max(50, int(default_poll_interval_ms))
+        mode = (watch_mode or DEFAULT_WATCH_MODE).strip().lower()
+        self.watch_mode = mode if mode in {"ws", "poll", "ws_with_poll_fallback"} else DEFAULT_WATCH_MODE
+        self._subscribe_fn = subscribe_fn
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
         self._last_due: dict[str, float] = {}
@@ -66,6 +80,9 @@ class RecalcScheduler:
         self._started_at: str | None = None
         self._last_loop_at: str | None = None
         self._loop_errors = 0
+        self._ws_connected = False
+        self._ws_reconnects = 0
+        self._lock = threading.Lock()
 
     def set_client_factory(self, factory: Level2ClientFactory | None) -> None:
         self._client_factory = factory
@@ -74,6 +91,9 @@ class RecalcScheduler:
         return {
             "enabled": self.enabled,
             "running": self._task is not None and not self._task.done(),
+            "watch_mode": self.watch_mode,
+            "ws_connected": self._ws_connected,
+            "ws_reconnects": self._ws_reconnects,
             "default_poll_interval_ms": self.default_poll_interval_ms,
             "trigger_count": self.triggers.count(),
             "handler_ids": self.handlers.list_ids(),
@@ -93,6 +113,19 @@ class RecalcScheduler:
         if rule.tag_id:
             return rule.tag_id, "tag_id"
         return None, "none"
+
+    def collect_resolved_tag_ids(self) -> list[str]:
+        """Distinct resolved tag ids for enabled triggers (stable order)."""
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for rule in self.triggers.list_rules():
+            if not rule.enabled:
+                continue
+            tag_id, _ = self.resolve_tag_id(rule)
+            if tag_id and tag_id not in seen:
+                seen.add(tag_id)
+                ordered.append(tag_id)
+        return ordered
 
     def run_handler(
         self,
@@ -151,6 +184,30 @@ class RecalcScheduler:
                 state.last_poll_at = _utc_now_iso()
                 logger.exception("recalc trigger %s unexpected error", rule.trigger_id)
 
+    def handle_sample(self, sample: Sample) -> None:
+        """Apply one WS/REST Sample to every enabled trigger bound to its tag_id."""
+        self._last_loop_at = _utc_now_iso()
+        tag_id = sample.tag_id
+        for rule in self.triggers.list_rules():
+            if not rule.enabled:
+                continue
+            resolved, _ = self.resolve_tag_id(rule)
+            if resolved != tag_id:
+                continue
+            try:
+                with self._lock:
+                    self._apply_sample(rule, sample)
+            except Exception as exc:  # noqa: BLE001
+                self._loop_errors += 1
+                state = self.triggers.get_state(rule.trigger_id)
+                state.last_result = "error"
+                state.last_error = str(exc) or exc.__class__.__name__
+                state.last_skip_reason = None
+                state.last_poll_at = _utc_now_iso()
+                logger.exception(
+                    "recalc trigger %s unexpected error on sample", rule.trigger_id
+                )
+
     def _evaluate_trigger(self, rule: TriggerRule) -> None:
         state = self.triggers.get_state(rule.trigger_id)
         state.last_poll_at = _utc_now_iso()
@@ -184,6 +241,13 @@ class RecalcScheduler:
             )
             return
 
+        self._apply_sample(rule, sample)
+
+    def _apply_sample(self, rule: TriggerRule, sample: Sample) -> None:
+        state = self.triggers.get_state(rule.trigger_id)
+        state.last_poll_at = _utc_now_iso()
+        state.resolved_tag_id = sample.tag_id
+
         if sample.quality != QUALITY_GOOD:
             state.last_result = "skipped"
             state.last_skip_reason = "bad_quality"
@@ -212,7 +276,7 @@ class RecalcScheduler:
             "recalc trigger %s fired → handler %s (tag=%s)",
             rule.trigger_id,
             rule.handler_id,
-            tag_id,
+            sample.tag_id,
         )
         run = self.run_handler(rule.handler_id, trigger_id=rule.trigger_id)
         if run.get("result") == "ok":
@@ -226,12 +290,21 @@ class RecalcScheduler:
 
     async def run_loop(self) -> None:
         """Background asyncio loop; exits when stop() is requested."""
-        interval_s = self.default_poll_interval_ms / 1000.0
         self._started_at = _utc_now_iso()
         logger.info(
-            "recalc poll scheduler started (interval_ms=%s)",
+            "recalc watcher started (mode=%s, interval_ms=%s)",
+            self.watch_mode,
             self.default_poll_interval_ms,
         )
+        if self.watch_mode == "poll":
+            await self._run_poll_loop()
+        else:
+            await self._run_ws_loop(
+                poll_fallback=self.watch_mode == "ws_with_poll_fallback"
+            )
+
+    async def _run_poll_loop(self) -> None:
+        interval_s = self.default_poll_interval_ms / 1000.0
         while not self._stop.is_set():
             try:
                 self.tick_all()
@@ -243,6 +316,91 @@ class RecalcScheduler:
             except TimeoutError:
                 continue
 
+    async def _run_ws_loop(self, *, poll_fallback: bool) -> None:
+        loop = asyncio.get_running_loop()
+        sample_queue: asyncio.Queue[Sample] = asyncio.Queue()
+        worker_stop = threading.Event()
+
+        def on_connection_change(connected: bool) -> None:
+            was = self._ws_connected
+            self._ws_connected = connected
+            if connected and not was:
+                self._ws_reconnects += 1
+
+        def reader() -> None:
+            while not worker_stop.is_set() and not self._stop.is_set():
+                tag_ids = self.collect_resolved_tag_ids()
+                if not tag_ids:
+                    self._ws_connected = False
+                    time.sleep(self.default_poll_interval_ms / 1000.0)
+                    continue
+                try:
+                    for sample in self._iter_subscribe(
+                        tag_ids,
+                        on_connection_change=on_connection_change,
+                        should_stop=lambda: worker_stop.is_set() or self._stop.is_set(),
+                    ):
+                        fut = asyncio.run_coroutine_threadsafe(
+                            sample_queue.put(sample), loop
+                        )
+                        try:
+                            fut.result(timeout=5.0)
+                        except Exception:  # noqa: BLE001
+                            break
+                except Exception as exc:  # noqa: BLE001
+                    self._ws_connected = False
+                    self._loop_errors += 1
+                    logger.warning("recalc WS reader error: %s", exc)
+                    time.sleep(min(2.0, self.default_poll_interval_ms / 1000.0))
+
+        thread = threading.Thread(
+            target=reader, name="recalc-ws-subscribe", daemon=True
+        )
+        thread.start()
+        interval_s = self.default_poll_interval_ms / 1000.0
+        try:
+            while not self._stop.is_set():
+                try:
+                    sample = await asyncio.wait_for(
+                        sample_queue.get(), timeout=interval_s
+                    )
+                    self.handle_sample(sample)
+                except TimeoutError:
+                    if poll_fallback and not self._ws_connected:
+                        try:
+                            self.tick_all()
+                        except Exception:  # noqa: BLE001
+                            self._loop_errors += 1
+                            logger.exception("recalc poll fallback tick failed")
+        finally:
+            worker_stop.set()
+            self._ws_connected = False
+            thread.join(timeout=5.0)
+
+    def _iter_subscribe(
+        self,
+        tag_ids: list[str],
+        *,
+        on_connection_change: Callable[[bool], None],
+        should_stop: Callable[[], bool],
+    ) -> Iterator[Sample]:
+        if self._subscribe_fn is not None:
+            yield from self._subscribe_fn(
+                tag_ids,
+                on_connection_change=on_connection_change,
+                should_stop=should_stop,
+            )
+            return
+        if self._client_factory is None:
+            raise Level2Error("level2_client_unavailable")
+        with self._client_factory() as client:
+            yield from client.subscribe(
+                tag_ids,
+                on_connection_change=on_connection_change,
+                should_stop=should_stop,
+                reconnect=True,
+            )
+
     def start(self) -> asyncio.Task[None] | None:
         """Start background task when enabled. Idempotent."""
         if not self.enabled:
@@ -250,7 +408,7 @@ class RecalcScheduler:
         if self._task is not None and not self._task.done():
             return self._task
         self._stop = asyncio.Event()
-        self._task = asyncio.create_task(self.run_loop(), name="recalc-poll")
+        self._task = asyncio.create_task(self.run_loop(), name="recalc-watch")
         return self._task
 
     async def stop(self) -> None:

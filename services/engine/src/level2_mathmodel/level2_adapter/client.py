@@ -1,17 +1,25 @@
-"""Level2 HTTP client — read-only; no writes to Collector/PLC."""
+"""Level2 HTTP/WS client — read-only; no writes to Collector/PLC."""
 
 from __future__ import annotations
 
+import json
+import logging
+import time
 from collections.abc import Callable, Iterator
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlparse, urlunparse
 
 import httpx
 
 from .models import Sample
 
-# Callback for optional WS subscribe stub / future real stream.
+# Callback for live Sample delivery (WS subscribe).
 SampleHandler = Callable[[Sample], None]
+ConnectionHandler = Callable[[bool], None]
+StopPredicate = Callable[[], bool]
+WsConnect = Callable[..., Any]
+
+logger = logging.getLogger(__name__)
 
 
 class Level2Error(RuntimeError):
@@ -28,7 +36,7 @@ class Level2HTTPError(Level2Error):
 
 
 class Level2Client:
-    """Read-only client for Level2 Collector REST API (OpenAPI 1.4.0).
+    """Read-only client for Level2 Collector REST + WS API (OpenAPI 1.4.0).
 
     Intentionally has no PUT/POST write helpers for tag values or devices.
     Prefer ``get_tag_catalog`` for catalog import over ``list_tags``.
@@ -41,6 +49,7 @@ class Level2Client:
         client: httpx.Client | None = None,
         timeout: float = 10.0,
         api_token: str | None = None,
+        ws_connect: WsConnect | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._owns_client = client is None
@@ -55,6 +64,7 @@ class Level2Client:
             self._api_token = api_token
         else:
             self._api_token = api_token
+        self._ws_connect = ws_connect
 
     def close(self) -> None:
         if self._owns_client:
@@ -162,22 +172,129 @@ class Level2Client:
             raise Level2Error(f"GET {path}: expected JSON array")
         return [Sample.from_dict(item) for item in data]
 
+    def stream_url(self, tag_ids: list[str] | None = None) -> str:
+        """Build ``ws(s)://…/api/v1/ws/stream`` URL with optional tag filter + token."""
+        parsed = urlparse(self.base_url)
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+        path = (parsed.path.rstrip("/") + "/api/v1/ws/stream").replace("//", "/")
+        if not path.startswith("/"):
+            path = "/" + path
+        query_items: list[tuple[str, str]] = []
+        for tag_id in tag_ids or []:
+            query_items.append(("tag_id", tag_id))
+        if self._api_token:
+            query_items.append(("token", self._api_token))
+        query = urlencode(query_items)
+        return urlunparse((scheme, parsed.netloc, path, "", query, ""))
+
     def subscribe(
         self,
         tag_ids: list[str] | None = None,
         *,
         on_sample: SampleHandler | None = None,
+        on_connection_change: ConnectionHandler | None = None,
+        should_stop: StopPredicate | None = None,
+        reconnect: bool = True,
+        initial_backoff_s: float = 0.5,
+        max_backoff_s: float = 30.0,
     ) -> Iterator[Sample]:
-        """WebSocket live stream stub — not wired in Wave 1 unit tests.
+        """Yield live Samples from ``GET /api/v1/ws/stream`` (WebSocket upgrade).
 
-        Real Level2 endpoint: ``GET /api/v1/ws/stream`` (upgrade). Callers that
-        need live samples today should poll ``get_tag_value`` / ``list_tags``.
+        Reconnects with exponential backoff when ``reconnect=True``. When
+        ``LEVEL2_API_TOKEN`` / ``api_token`` is set, sends Bearer + X-API-Token
+        headers and ``?token=`` query (Level2 WS auth).
         """
-        del tag_ids, on_sample
-        raise NotImplementedError(
-            "Wave1: WebSocket subscribe stub — use REST get_tag_value/list_tags; "
-            "real WS at GET /api/v1/ws/stream"
-        )
+        connect = self._ws_connect
+        if connect is None:
+            from websockets.sync.client import connect as ws_connect
+
+            connect = ws_connect
+
+        ids = list(tag_ids or [])
+        uri = self.stream_url(ids)
+        headers: list[tuple[str, str]] = []
+        if self._api_token:
+            headers.append(("Authorization", f"Bearer {self._api_token}"))
+            headers.append(("X-API-Token", self._api_token))
+
+        backoff = max(0.05, float(initial_backoff_s))
+        max_backoff = max(backoff, float(max_backoff_s))
+        stop = should_stop or (lambda: False)
+
+        while not stop():
+            try:
+                with connect(uri, additional_headers=headers) as ws:
+                    if on_connection_change is not None:
+                        on_connection_change(True)
+                    backoff = max(0.05, float(initial_backoff_s))
+                    if ids:
+                        # Server also accepts query filter; subscribe message
+                        # replaces the filter if the client needs to refresh.
+                        ws.send(json.dumps({"subscribe": ids}))
+                    for message in ws:
+                        if stop():
+                            return
+                        sample = self._sample_from_ws_message(message)
+                        if sample is None:
+                            continue
+                        if on_sample is not None:
+                            on_sample(sample)
+                        yield sample
+            except Exception as exc:  # noqa: BLE001 — reconnect path
+                if on_connection_change is not None:
+                    on_connection_change(False)
+                if stop() or not reconnect:
+                    raise Level2Error(f"WS subscribe failed: {exc}") from exc
+                logger.warning(
+                    "Level2 WS disconnected (%s); reconnect in %.1fs",
+                    exc,
+                    backoff,
+                )
+                deadline = time.monotonic() + backoff
+                while time.monotonic() < deadline:
+                    if stop():
+                        return
+                    time.sleep(min(0.1, deadline - time.monotonic()))
+                backoff = min(backoff * 2.0, max_backoff)
+                continue
+
+            # Clean server close — reconnect unless stopped.
+            if on_connection_change is not None:
+                on_connection_change(False)
+            if stop() or not reconnect:
+                return
+            logger.info("Level2 WS stream ended; reconnect in %.1fs", backoff)
+            deadline = time.monotonic() + backoff
+            while time.monotonic() < deadline:
+                if stop():
+                    return
+                time.sleep(min(0.1, deadline - time.monotonic()))
+            backoff = min(backoff * 2.0, max_backoff)
+
+    @staticmethod
+    def _sample_from_ws_message(message: Any) -> Sample | None:
+        if isinstance(message, bytes):
+            message = message.decode("utf-8")
+        if not isinstance(message, str):
+            return None
+        text = message.strip()
+        if not text:
+            return None
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            logger.debug("Ignoring non-JSON WS message")
+            return None
+        if not isinstance(payload, dict):
+            return None
+        # Ignore control / ack frames that are not Samples.
+        if "tag_id" not in payload or "quality" not in payload or "time" not in payload:
+            return None
+        try:
+            return Sample.from_dict(payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.debug("Ignoring invalid WS Sample: %s", exc)
+            return None
 
     @staticmethod
     def _raise_for_status(response: httpx.Response, action: str) -> None:

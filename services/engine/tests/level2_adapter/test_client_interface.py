@@ -187,12 +187,6 @@ def test_http_error_on_404() -> None:
     assert exc.value.status_code == 404
 
 
-def test_subscribe_is_stub() -> None:
-    with _make_client(lambda r: httpx.Response(500)) as client:
-        with pytest.raises(NotImplementedError, match="WebSocket"):
-            next(client.subscribe(tag_ids=["Cell.Current"]))
-
-
 def test_client_has_no_write_methods() -> None:
     """Read-only adapter must not expose Level2 PUT/write helpers."""
     names = {n for n in dir(Level2Client) if not n.startswith("_")}

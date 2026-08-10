@@ -27,6 +27,7 @@ from level2_mathmodel.recalc import (
     poll_interval_ms_from_env,
     seed_default_trigger,
     triggers_path_from_env,
+    watch_mode_from_env,
 )
 from level2_mathmodel.tag_import import TagImportStore
 
@@ -87,6 +88,7 @@ def create_app(
             level2_client_factory=factory or default_level2_client_factory,
             enabled=poll_enabled,
             default_poll_interval_ms=poll_interval_ms_from_env(),
+            watch_mode=watch_mode_from_env(),
         )
 
     @asynccontextmanager
@@ -103,7 +105,7 @@ def create_app(
         version=SERVICE_VERSION,
         description=(
             "Engine-owned local variables + Level2 tag catalog import; "
-            "multi-trigger recalc poll; no PLC / Level2 write."
+            "multi-trigger recalc watch (WS/poll); no PLC / Level2 write."
         ),
         lifespan=lifespan,
     )
@@ -151,6 +153,8 @@ def create_app(
             "binding_count": imports.binding_count(),
             "recalc_poll_enabled": recalc["enabled"],
             "recalc_poll_running": recalc["running"],
+            "recalc_watch_mode": recalc.get("watch_mode"),
+            "recalc_ws_connected": recalc.get("ws_connected"),
             "recalc_trigger_count": recalc["trigger_count"],
             "recalc_last_trigger_at": last_trigger_at,
             "recalc_last_ok_at": last_ok,

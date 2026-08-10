@@ -1,7 +1,10 @@
-"""Multi-trigger recalc scheduler — mocked Level2Client edge cases."""
+"""Multi-trigger recalc scheduler — mocked Level2Client / WS edge cases."""
 
 from __future__ import annotations
 
+import asyncio
+import threading
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -357,3 +360,159 @@ def test_handler_error_isolated() -> None:
     sched.tick_all()
     assert sched.triggers.get_state("boom").last_result == "error"
     assert sched.triggers.get_state("ok").last_result == "ok"
+
+
+def test_handle_sample_ws_rising_edge() -> None:
+    sched = _scheduler(
+        rules=[
+            TriggerRule(
+                trigger_id="t_ws",
+                handler_id=GENERIC_NOOP_HANDLER_ID,
+                tag_id="flag-ws",
+            )
+        ],
+        get_tag_value=lambda tag_id: _sample(tag_id, value_bool=False),
+    )
+    # Prime with false, then rising true via WS sample path (no REST).
+    sched.handle_sample(_sample("flag-ws", value_bool=False))
+    assert sched.triggers.get_state("t_ws").fire_count == 0
+    sched.handle_sample(_sample("flag-ws", value_bool=True))
+    assert sched.triggers.get_state("t_ws").fire_count == 1
+    assert sched.triggers.get_state("t_ws").last_result == "ok"
+    assert "recalc.t_ws.last_run" in {v["id"] for v in sched.local_vars.list()}
+
+
+def test_ws_loop_consumes_mocked_subscribe() -> None:
+    samples = [
+        _sample("flag-a", value_bool=False),
+        _sample("flag-a", value_bool=True),
+    ]
+    gate = threading.Event()
+
+    def subscribe_fn(
+        tag_ids: list[str],
+        *,
+        on_connection_change: Any = None,
+        should_stop: Any = None,
+        **kwargs: Any,
+    ) -> Iterator[Sample]:
+        assert "flag-a" in tag_ids
+        if on_connection_change:
+            on_connection_change(True)
+        for sample in samples:
+            if should_stop and should_stop():
+                return
+            yield sample
+        gate.set()
+        while not (should_stop and should_stop()):
+            threading.Event().wait(0.05)
+
+    local = LocalVarStore()
+    tags = TagImportStore()
+    store = TriggerStore()
+    store.replace(
+        [
+            TriggerRule(
+                trigger_id="t_a",
+                handler_id=GENERIC_NOOP_HANDLER_ID,
+                tag_id="flag-a",
+            ).to_dict()
+        ]
+    )
+    sched = RecalcScheduler(
+        local_vars=local,
+        tag_import=tags,
+        triggers=store,
+        handlers=HandlerRegistry(),
+        enabled=True,
+        watch_mode="ws",
+        default_poll_interval_ms=50,
+        subscribe_fn=subscribe_fn,
+    )
+
+    async def _run() -> None:
+        task = sched.start()
+        assert task is not None
+        assert gate.wait(2.0)
+        # Allow consumer to process queued samples.
+        for _ in range(40):
+            if sched.triggers.get_state("t_a").fire_count >= 1:
+                break
+            await asyncio.sleep(0.05)
+        await sched.stop()
+
+    asyncio.run(_run())
+    assert sched.triggers.get_state("t_a").fire_count == 1
+    assert sched.status_dict()["watch_mode"] == "ws"
+
+
+def test_ws_with_poll_fallback_ticks_when_disconnected() -> None:
+    values = {"flag-a": False}
+    calls = {"n": 0}
+
+    def get_tag_value(tag_id: str) -> Sample:
+        calls["n"] += 1
+        return _sample(tag_id, value_bool=values[tag_id])
+
+    def subscribe_fn(
+        tag_ids: list[str],
+        *,
+        on_connection_change: Any = None,
+        should_stop: Any = None,
+        **kwargs: Any,
+    ) -> Iterator[Sample]:
+        if on_connection_change:
+            on_connection_change(False)
+        while not (should_stop and should_stop()):
+            threading.Event().wait(0.05)
+        return
+        yield  # pragma: no cover — make this a generator
+
+    client = MagicMock()
+    client.get_tag_value.side_effect = get_tag_value
+    client.__enter__.return_value = client
+    client.__exit__.return_value = None
+
+    local = LocalVarStore()
+    tags = TagImportStore()
+    store = TriggerStore()
+    store.replace(
+        [
+            TriggerRule(
+                trigger_id="t_a",
+                handler_id=GENERIC_NOOP_HANDLER_ID,
+                tag_id="flag-a",
+            ).to_dict()
+        ]
+    )
+    sched = RecalcScheduler(
+        local_vars=local,
+        tag_import=tags,
+        triggers=store,
+        handlers=HandlerRegistry(),
+        level2_client_factory=lambda: client,
+        enabled=True,
+        watch_mode="ws_with_poll_fallback",
+        default_poll_interval_ms=50,
+        subscribe_fn=subscribe_fn,
+    )
+
+    async def _run() -> None:
+        task = sched.start()
+        assert task is not None
+        # Prime via poll fallback.
+        for _ in range(40):
+            if calls["n"] >= 1:
+                break
+            await asyncio.sleep(0.05)
+        values["flag-a"] = True
+        sched._last_due.clear()
+        for _ in range(40):
+            if sched.triggers.get_state("t_a").fire_count >= 1:
+                break
+            await asyncio.sleep(0.05)
+        await sched.stop()
+
+    asyncio.run(_run())
+    assert calls["n"] >= 1
+    assert sched.triggers.get_state("t_a").fire_count == 1
