@@ -1,0 +1,4 @@
+{
+  "status_text": "ok",
+  "note": "Level2 /readyz returns 200 when ready; 503 when not connected. Unit tests mock status codes."
+}

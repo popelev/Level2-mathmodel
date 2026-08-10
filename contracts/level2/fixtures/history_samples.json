@@ -1,0 +1,18 @@
+[
+  {
+    "time": "2026-08-10T07:59:00Z",
+    "tag_id": "Cell.Current",
+    "value_num": 1248.0,
+    "value_text": null,
+    "value_bool": null,
+    "quality": 0
+  },
+  {
+    "time": "2026-08-10T08:00:00Z",
+    "tag_id": "Cell.Current",
+    "value_num": 1250.5,
+    "value_text": null,
+    "value_bool": null,
+    "quality": 0
+  }
+]
