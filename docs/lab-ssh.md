@@ -33,21 +33,27 @@ Host level2-vm
 
 ## Helpers
 
-From Windows (Git Bash / PowerShell with OpenSSH):
+From Windows (Git Bash / PowerShell with OpenSSH). All remote work uses
+`ssh -o BatchMode=yes -o ConnectTimeout=15 level2-vm` with batched remote commands.
 
 ```bash
 # Connectivity
 scripts/lab/ssh-check.sh
 
 # Clone or pull on VM to ~/Level2-mathmodel
-scripts/lab/vm-pull.sh
+scripts/lab/pull.sh
 
 # Engine pytest via Docker on VM
-scripts/lab/vm-test.sh
+scripts/lab/test-engine.sh
 
-# Compose config + network check (no disruptive down)
-scripts/lab/vm-smoke.sh
+# Compose config + network check (no disruptive down / no prune)
+scripts/lab/smoke-stub.sh
 ```
+
+Compatibility aliases: `vm-pull.sh`, `vm-test.sh`, `vm-smoke.sh` (same behavior).
+
+Jenkins Multibranch setup for this repo: [`deploy/ci/README.md`](../deploy/ci/README.md)
+(`http://192.168.157.128:8081`, job name `level2-mathmodel`).
 
 Manual one-liner pattern:
 
