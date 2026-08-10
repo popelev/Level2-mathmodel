@@ -387,7 +387,6 @@ def test_ws_loop_consumes_mocked_subscribe() -> None:
         _sample("flag-a", value_bool=False),
         _sample("flag-a", value_bool=True),
     ]
-    gate = threading.Event()
 
     def subscribe_fn(
         tag_ids: list[str],
@@ -403,7 +402,6 @@ def test_ws_loop_consumes_mocked_subscribe() -> None:
             if should_stop and should_stop():
                 return
             yield sample
-        gate.set()
         while not (should_stop and should_stop()):
             threading.Event().wait(0.05)
 
@@ -433,9 +431,8 @@ def test_ws_loop_consumes_mocked_subscribe() -> None:
     async def _run() -> None:
         task = sched.start()
         assert task is not None
-        assert gate.wait(2.0)
-        # Allow consumer to process queued samples.
-        for _ in range(40):
+        # Do not block the event loop (queue put uses run_coroutine_threadsafe).
+        for _ in range(80):
             if sched.triggers.get_state("t_a").fire_count >= 1:
                 break
             await asyncio.sleep(0.05)
