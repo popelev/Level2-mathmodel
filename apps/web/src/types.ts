@@ -12,6 +12,34 @@ export type EngineStatus = {
   mode: "scaffold" | "monitoring" | "planning";
   level2_api_url?: string;
   local_var_count?: number;
+  tag_catalog_count?: number;
+  binding_count?: number;
+  recalc_poll_enabled?: boolean;
+  recalc_poll_running?: boolean;
+  recalc_trigger_count?: number;
+  recalc_last_trigger_at?: string | null;
+  recalc_last_ok_at?: string | null;
+  recalc_last_error?: string | null;
+};
+
+export type RecalcStatus = {
+  enabled: boolean;
+  running?: boolean;
+  default_poll_interval_ms: number;
+  trigger_count: number;
+  handler_ids: string[];
+  last_loop_at?: string | null;
+  triggers?: Array<{
+    trigger_id: string;
+    handler_id: string;
+    enabled?: boolean;
+    state?: {
+      last_trigger_at?: string | null;
+      last_result?: "ok" | "error" | "skipped" | null;
+      last_error?: string | null;
+      fire_count?: number;
+    };
+  }>;
 };
 
 export type LiveTagSummary = {

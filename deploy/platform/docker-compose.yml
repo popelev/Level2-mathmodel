@@ -18,6 +18,10 @@ services:
     environment:
       LEVEL2_API_URL: http://level2-collector:8080
       MATHMODEL_PORT: "8090"
+      # Set RECALC_POLL_ENABLED=1 to start multi-trigger flag polling.
+      RECALC_POLL_ENABLED: "${RECALC_POLL_ENABLED:-0}"
+      POLL_INTERVAL_MS: "${POLL_INTERVAL_MS:-1000}"
+      RECALC_FLAG_TAG_ID: "${RECALC_FLAG_TAG_ID:-}"
     networks:
       - smoke_default
     restart: unless-stopped

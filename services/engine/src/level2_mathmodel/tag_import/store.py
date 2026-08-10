@@ -56,6 +56,11 @@ class TagImportStore:
     def list_bindings(self) -> list[dict[str, Any]]:
         return [deepcopy(v) for v in self._bindings.values()]
 
+    def get_binding(self, logical_name: str) -> dict[str, Any] | None:
+        """Return one binding by logical_name, or None if missing."""
+        item = self._bindings.get(logical_name)
+        return deepcopy(item) if item is not None else None
+
     def replace_bindings(self, bindings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Replace entire bindings list."""
         next_map: dict[str, dict[str, Any]] = {}

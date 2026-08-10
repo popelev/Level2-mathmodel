@@ -26,6 +26,7 @@ tags:
   - name: imports
   - name: bindings
   - name: plan
+  - name: recalc
 
 paths:
   /healthz:
@@ -83,6 +84,117 @@ paths:
                 $ref: "#/components/schemas/LiveInputsSummary"
         "502":
           description: Level2 upstream unavailable
+
+  /api/v1/recalc/status:
+    get:
+      tags: [recalc]
+      summary: Recalc poll scheduler status (triggers + last runs)
+      responses:
+        "200":
+          description: Scheduler status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecalcStatus"
+
+  /api/v1/recalc/triggers:
+    get:
+      tags: [recalc]
+      summary: List recalc trigger rules with runtime state
+      responses:
+        "200":
+          description: Trigger list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecalcTrigger"
+    put:
+      tags: [recalc]
+      summary: Replace or upsert recalc trigger rules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/RecalcTriggerRule"
+                - type: object
+                  required: [triggers]
+                  properties:
+                    mode:
+                      type: string
+                      enum: [replace, upsert]
+                    triggers:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/RecalcTriggerRule"
+      responses:
+        "200":
+          description: Updated trigger list with state
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecalcTrigger"
+        "400":
+          description: Validation error
+
+  /api/v1/recalc/triggers/{trigger_id}:
+    delete:
+      tags: [recalc]
+      summary: Delete one trigger rule
+      parameters:
+        - name: trigger_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /api/v1/recalc/handlers:
+    get:
+      tags: [recalc]
+      summary: List registered handler ids
+      responses:
+        "200":
+          description: Handler ids
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [handler_ids]
+                properties:
+                  handler_ids:
+                    type: array
+                    items:
+                      type: string
+
+  /api/v1/recalc/run/{handler_id}:
+    post:
+      tags: [recalc]
+      summary: Manually run a handler (local vars only)
+      parameters:
+        - name: handler_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Handler finished ok
+        "404":
+          description: Unknown handler
+        "500":
+          description: Handler error
 
   /api/v1/local-vars:
     get:
@@ -352,6 +464,124 @@ components:
         binding_count:
           type: integer
           minimum: 0
+        recalc_poll_enabled:
+          type: boolean
+        recalc_poll_running:
+          type: boolean
+        recalc_trigger_count:
+          type: integer
+          minimum: 0
+        recalc_last_trigger_at:
+          type: string
+          format: date-time
+          nullable: true
+        recalc_last_ok_at:
+          type: string
+          format: date-time
+          nullable: true
+        recalc_last_error:
+          type: string
+          nullable: true
+
+    RecalcTriggerRule:
+      type: object
+      required: [trigger_id, handler_id]
+      properties:
+        trigger_id:
+          type: string
+        handler_id:
+          type: string
+          description: Registered handler id (e.g. copper.plan_cathode_anode)
+        logical_name:
+          type: string
+          description: Preferred binding logical_name → tag_id
+        tag_id:
+          type: string
+          description: Fallback Level2 tag id when binding missing
+        device_id:
+          type: string
+        edge_mode:
+          type: string
+          enum: [rising_bool, value_changed, equals]
+          default: rising_bool
+        equals_value: {}
+        enabled:
+          type: boolean
+          default: true
+        poll_interval_ms:
+          type: integer
+          minimum: 50
+          nullable: true
+
+    RecalcTriggerState:
+      type: object
+      properties:
+        last_raw_value: {}
+        last_bool:
+          type: boolean
+          nullable: true
+        last_poll_at:
+          type: string
+          nullable: true
+        last_trigger_at:
+          type: string
+          nullable: true
+        last_result:
+          type: string
+          enum: [ok, error, skipped]
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        last_skip_reason:
+          type: string
+          nullable: true
+        fire_count:
+          type: integer
+        resolved_tag_id:
+          type: string
+          nullable: true
+
+    RecalcTrigger:
+      allOf:
+        - $ref: "#/components/schemas/RecalcTriggerRule"
+        - type: object
+          properties:
+            state:
+              $ref: "#/components/schemas/RecalcTriggerState"
+
+    RecalcStatus:
+      type: object
+      required: [enabled, default_poll_interval_ms, trigger_count, handler_ids]
+      properties:
+        enabled:
+          type: boolean
+        running:
+          type: boolean
+        default_poll_interval_ms:
+          type: integer
+        trigger_count:
+          type: integer
+        handler_ids:
+          type: array
+          items:
+            type: string
+        started_at:
+          type: string
+          nullable: true
+        last_loop_at:
+          type: string
+          nullable: true
+        loop_errors:
+          type: integer
+        triggers:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecalcTrigger"
+        last_handler_runs:
+          type: array
+          items:
+            type: object
 
     TagCatalogEntry:
       type: object

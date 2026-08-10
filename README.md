@@ -24,6 +24,7 @@ UI strings, code comments, and READMEs are **English**.
 - Jenkins Multibranch: `level2-mathmodel` — see [`deploy/ci/README.md`](deploy/ci/README.md)
 - Cross-repo / Jira coordination: [`docs/cross-repo-coord.md`](docs/cross-repo-coord.md)
 - Level2 tag import (catalog + bindings): [`docs/level2-import.md`](docs/level2-import.md)
+- Multi-trigger recalc poll: [`docs/recalc-triggers.md`](docs/recalc-triggers.md)
 - Do not touch Level2/Jenkins images or run `docker compose down` on Level2 projects.
 
 ### Quick test (Docker, as CI)

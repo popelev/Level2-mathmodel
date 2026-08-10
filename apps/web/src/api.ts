@@ -6,6 +6,7 @@ import type {
   LocalVarInput,
   PlanStub,
   ReadyStatus,
+  RecalcStatus,
   TagBinding,
   TagCatalogEntry,
 } from "./types";
@@ -53,6 +54,7 @@ export const api = {
   healthz: () => request<string>("/healthz"),
   readyz: () => request<ReadyStatus>("/readyz"),
   status: () => request<EngineStatus>("/api/v1/status"),
+  recalcStatus: () => request<RecalcStatus>("/api/v1/recalc/status"),
   /** Engine: GET /api/v1/live/inputs (Level2 read-only projection). */
   liveInputs: () => request<LiveInputsSummary>("/api/v1/live/inputs"),
   listLocalVars: () => request<LocalVar[]>("/api/v1/local-vars"),
