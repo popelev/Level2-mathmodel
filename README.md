@@ -4,7 +4,7 @@ Monitoring + planning MVP companion to **[Level2](https://github.com/popelev/lev
 
 ---
 
-## EN — Role vs Level2
+## Role vs Level2
 
 | | **Level2** | **Level2-mathmodel** (this repo) |
 |---|------------|----------------------------------|
@@ -22,6 +22,7 @@ Wave 0 = **scaffold only** (contracts, engine package, CI, lab scripts). No full
 - Docs: [`docs/lab-ssh.md`](docs/lab-ssh.md)
 - Compose: [`deploy/platform/docker-compose.yml`](deploy/platform/docker-compose.yml) → `LEVEL2_API_URL=http://level2-collector:8080`
 - Jenkins Multibranch: `level2-mathmodel` — see [`deploy/ci/README.md`](deploy/ci/README.md)
+- Do not touch Level2/Jenkins images or run `docker compose down` on Level2 projects.
 
 ### Quick test (Docker, as CI)
 
@@ -30,28 +31,7 @@ docker run --rm -v "$PWD":/src -w /src python:3.12-bookworm \
   bash -lc 'pip install -q -r services/engine/requirements.txt && cd services/engine && pytest'
 ```
 
----
-
-## RU — Роль относительно Level2
-
-| | **Level2** | **Level2-mathmodel** (этот репозиторий) |
-|---|------------|----------------------------------------|
-| Роль | Сборщик OPC UA / историк / Admin API | Матмодель: мониторинг + планирование |
-| I/O в MVP | Владеет тегами PLC; опциональные write gates | **Только чтение** API Level2; **локальные переменные** (без записи в PLC/Level2) |
-| Порт | 8080 / 8081 | **8090** |
-| Образы | `level2-collector` | `level2-mathmodel` |
-| Сеть | `smoke_default` | Подключается к `smoke_default` **только как клиент** |
-
-Wave 0 = **только каркас** (контракты, пакет engine, CI, lab-скрипты). Полный adapter/UI/медь — позже.
-
-### Лаборатория
-
-- Код правится на Windows; Docker/Jenkins — на Ubuntu VM по SSH-алиасу **`level2-vm`**.
-- Документация: [`docs/lab-ssh.md`](docs/lab-ssh.md)
-- Compose: порт **8090**, сеть **`smoke_default`**, `LEVEL2_API_URL=http://level2-collector:8080`
-- Не трогать образы Level2/Jenkins и не делать `docker compose down` проектов Level2.
-
-### Структура (Wave 0)
+### Structure (Wave 0)
 
 ```
 contracts/level2/          # pinned OpenAPI Level2 v1.2.1 + fixtures
@@ -63,3 +43,9 @@ deploy/platform/           # Dockerfile + compose :8090
 deploy/ci/                 # Jenkins Multibranch notes
 scripts/lab/               # ssh helpers to level2-vm
 ```
+
+---
+
+## Кратко (RU)
+
+Компаньон к Level2: мониторинг + планирование, порт **8090**, только чтение API Level2 и локальные переменные (без записи в PLC). Лаба: Windows → SSH `level2-vm`. Подробности — в английской секции выше и [`docs/lab-ssh.md`](docs/lab-ssh.md).
