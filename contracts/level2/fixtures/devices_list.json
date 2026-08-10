@@ -1,0 +1,11 @@
+[
+  {
+    "id": "sim_device",
+    "endpoint": "opc.tcp://127.0.0.1:4840",
+    "security": "None",
+    "username": "",
+    "poll_concurrency": 4,
+    "tag_count": 2,
+    "connected": true
+  }
+]

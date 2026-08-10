@@ -1,0 +1,15 @@
+# Pinned Level2 Collector API contract
+#
+# Source: https://raw.githubusercontent.com/popelev/level2/main/api/openapi.yaml
+# Pinned version (info.version in openapi.yaml): 1.2.1
+# Pinned for: Level2-mathmodel Wave 0 scaffold (read-only client)
+#
+# Refresh process (later waves):
+# 1. Download the upstream openapi.yaml into this directory
+# 2. Confirm info.version and update this note
+# 3. Adjust fixtures under contracts/level2/fixtures/ if schemas changed
+# 4. Re-run engine contract tests
+#
+LEVEL2_OPENAPI_VERSION=1.2.1
+SOURCE_URL=https://raw.githubusercontent.com/popelev/level2/main/api/openapi.yaml
+PINNED_FILE=openapi.yaml

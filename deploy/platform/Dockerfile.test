@@ -1,0 +1,11 @@
+# Test image helper — mirrors Jenkins Engine Test stage tooling.
+FROM python:3.12-bookworm
+
+WORKDIR /src
+
+COPY services/engine/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+ENV PYTHONPATH=/src/services/engine/src
+
+CMD ["pytest", "services/engine/tests"]

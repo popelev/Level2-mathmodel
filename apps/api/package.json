@@ -1,0 +1,14 @@
+{
+  "name": "level2-mathmodel-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Optional TypeScript BFF placeholder — primary API lives in services/engine",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,46 @@
+[
+  {
+    "device_id": "sim_device",
+    "tag": {
+      "id": "Cell.Current",
+      "node_id": "ns=2;s=Cell.Current",
+      "path": "Cell.Current",
+      "datatype": "float64",
+      "enabled": true,
+      "interval_ms": 1000,
+      "writable": false
+    },
+    "sample": {
+      "time": "2026-08-10T08:00:00Z",
+      "tag_id": "Cell.Current",
+      "value_num": 1250.5,
+      "value_text": null,
+      "value_bool": null,
+      "quality": 0
+    },
+    "updated_at": "2026-08-10T08:00:00Z",
+    "poll_avg_ms": 12.5
+  },
+  {
+    "device_id": "sim_device",
+    "tag": {
+      "id": "Cell.Voltage",
+      "node_id": "ns=2;s=Cell.Voltage",
+      "path": "Cell.Voltage",
+      "datatype": "float64",
+      "enabled": true,
+      "interval_ms": 1000,
+      "writable": false
+    },
+    "sample": {
+      "time": "2026-08-10T08:00:00Z",
+      "tag_id": "Cell.Voltage",
+      "value_num": 0.32,
+      "value_text": null,
+      "value_bool": null,
+      "quality": 0
+    },
+    "updated_at": "2026-08-10T08:00:00Z",
+    "poll_avg_ms": 11.0
+  }
+]

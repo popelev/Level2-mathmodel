@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Node / web
+node_modules/
+apps/web/dist/
+apps/api/dist/
+*.tsbuildinfo
+.npm/
+.pnpm-store/
+
+# Docker / compose local overrides
+docker-compose.override.yml
+*.local.yml
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Secrets / local lab
+*.pem
+*.key
+credentials.json
+secrets/
+
+# CI artifacts
+test-results.xml
+coverage.xml
+cov.out
+coverage.html
+*.log

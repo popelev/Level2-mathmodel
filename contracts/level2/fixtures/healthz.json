@@ -1,0 +1,4 @@
+{
+  "status_text": "ok",
+  "note": "Level2 /healthz returns text/plain 'ok'; this wrapper is for adapter unit tests"
+}

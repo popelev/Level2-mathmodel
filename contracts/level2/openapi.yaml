@@ -1,0 +1,1360 @@
+openapi: 3.0.3
+info:
+  title: Level2 Collector API
+  description: |
+    REST and WebSocket API for the Level2 OPC UA collector (this repository).
+    A **math / control model** is a **separate GitHub project** — it uses only this
+    HTTP/WS API (`LEVEL2_API_URL`); it never embeds an OPC stack or lives inside Level2.
+
+    **Canonical contract** for integrations. See also:
+    - docs/external-client-api.md
+    - docs/l2-model-integration.md
+    - docs/opc-write-mode.md
+    - docs/db-capacity-policy.md
+
+    **Write gates (all layers apply):**
+    1. `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default off → HTTP 403) — master kill switch
+    2. Optional `LEVEL2_API_TOKEN` / `api_token` — when set, mutating `/api/v1/*` and WS require
+       `Authorization: Bearer <token>`, `X-API-Token`, or `X-API-Key` (WS also accepts `?token=`)
+    3. Per-tag `writable` (default **false**) — Write API returns 403 when false
+
+    Batch write: `POST /api/v1/tags/values` — HTTP 200 when the request parses; per-item
+    `ok`/`error` in `results` (partial success allowed). Max 100 items.
+
+    **Capacity:** `full_policy=drop_oldest` trims Timescale chunks and may return busy
+    (`ErrCapacityBusy`) so the collector **spools** while trimming (no in-flight loss).
+
+    This document enumerates the **full** collector HTTP surface (integration + admin):
+    devices/tags CRUD, project xlsx, diagnostics, database capacity/wipe, health/metrics.
+  version: 1.2.1
+  contact:
+    name: popelev / Level2
+
+servers:
+  - url: http://127.0.0.1:8080
+    description: Lab collector (same origin as Admin UI)
+
+security: []
+
+tags:
+  - name: health
+  - name: tags
+  - name: devices
+  - name: browse
+  - name: project
+  - name: diagnostics
+  - name: database
+  - name: docs
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness
+      responses:
+        "200":
+          description: Process up
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness (OPC connected when not sim)
+      responses:
+        "200":
+          description: Ready
+        "503":
+          description: Not connected
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [docs]
+      summary: OpenAPI 3 specification (YAML)
+      responses:
+        "200":
+          description: Spec
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /docs:
+    get:
+      tags: [docs]
+      summary: Swagger UI
+      responses:
+        "200":
+          description: HTML Swagger UI for this API
+
+  /metrics:
+    get:
+      tags: [health]
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Prometheus text exposition format
+
+  /api/v1/tags:
+    get:
+      tags: [tags]
+      summary: List tags with live samples
+      parameters:
+        - name: device_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tag rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagValue"
+
+  /api/v1/tags/{id}/value:
+    get:
+      tags: [tags]
+      summary: Last live sample for a tag
+      parameters:
+        - $ref: "#/components/parameters/TagID"
+      responses:
+        "200":
+          description: Sample
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sample"
+        "404":
+          description: Unknown tag or no sample yet
+    put:
+      tags: [tags]
+      summary: Write scalar value to PLC (OPC UA)
+      description: |
+        Requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`, tag `writable=true`,
+        and API token when `LEVEL2_API_TOKEN` is set.
+        Coerces JSON to the tag's configured datatype, then OPC Write.
+        On OPC `BadTypeMismatch`, the driver performs one auto-retry with alternate width
+        (float64↔float32 / int64↔int32(+int16)) using the node's DataType Attribute.
+        Optional write-then-verify: body `verify` / query `?verify=true` performs OPC Read
+        after StatusOK Write and sets `verified` when readback matches (float epsilon).
+        Mismatch returns **409** JSON with `written` + `observed` (write already applied — non-transactional).
+        `optimistic` (default true) updates Live+WS immediately; `false` waits until after write (and verify if requested).
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/TagID"
+        - name: verify
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: When true, OPC Read after Write and require matching readback
+        - name: verify_timeout_ms
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 2000
+            maximum: 30000
+          description: Max time to retry readback until match (default 2000)
+        - name: optimistic
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Update Live+WS immediately on Write StatusOK (default true)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WriteValueRequest"
+            examples:
+              float:
+                value:
+                  value: 42.5
+                  device_id: s7_1500
+              bool:
+                value:
+                  value: true
+                  device_id: s7_1500
+              verify:
+                value:
+                  value: 42.5
+                  device_id: s7_1500
+                  verify: true
+                  verify_timeout_ms: 2000
+      responses:
+        "200":
+          description: Write accepted by OPC (Status Good); verified=true when verify requested and readback matched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WriteValueResponse"
+        "400":
+          description: Bad JSON / coercion / ambiguous tag
+        "401":
+          description: API token configured and missing/wrong
+        "403":
+          description: Write disabled (opc_write_enabled=false) or tag writable=false
+        "404":
+          description: Unknown tag
+        "409":
+          description: |
+            Device not connected / no writer, or write-then-verify mismatch / verify unavailable.
+            Verify failures return JSON WriteValueResponse with error=verify_failed, written, and observed.
+        "502":
+          description: OPC transport / StatusCode not Good, or verify Read failed after successful Write
+
+  /api/v1/tags/values:
+    post:
+      tags: [tags]
+      summary: Batch write tag values to PLC
+      description: |
+        Partial-failure semantics: HTTP **200** when the batch body parses and size ≤ 100.
+        Each item has independent `ok` / `error` / `http_status`. Master write gate and
+        API token apply to the whole request; per-item writable/coercion/OPC errors appear in `results`.
+        Per-item OPC Write uses the same BadTypeMismatch auto-retry as single PUT.
+        Request-level or per-item `verify` / `verify_timeout_ms` / `optimistic` mirror single-write semantics;
+        verify failures set `ok=false` with `written` + `observed` on that item (still HTTP 200 for the batch).
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchWriteRequest"
+            example:
+              writes:
+                - tag_id: Motor1.SpeedSP
+                  value: 42.5
+                  device_id: s7_1500
+                - tag_id: Motor1.Enable
+                  value: true
+      responses:
+        "200":
+          description: Batch accepted; inspect results for per-item status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchWriteResponse"
+        "400":
+          description: Invalid JSON / empty writes / exceeds max 100
+        "401":
+          description: API token configured and missing/wrong
+        "403":
+          description: opc_write_enabled=false
+
+  /api/v1/tags/{id}/history:
+    get:
+      tags: [tags]
+      summary: Historian query
+      parameters:
+        - $ref: "#/components/parameters/TagID"
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Samples
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sample"
+        "503":
+          description: Historian unavailable
+
+  /api/v1/devices:
+    get:
+      tags: [devices]
+      summary: List devices and connection status
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+    post:
+      tags: [devices]
+      summary: Create device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceInput"
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Invalid body
+        "401":
+          description: API token required
+        "409":
+          description: Device id already exists
+        "503":
+          description: Config store unavailable
+
+  /api/v1/devices/{id}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceID"
+    put:
+      tags: [devices]
+      summary: Update device (id from path)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceInput"
+      responses:
+        "200":
+          description: Updated
+        "400":
+          description: Invalid body
+        "401":
+          description: API token required
+        "503":
+          description: Config store unavailable
+    delete:
+      tags: [devices]
+      summary: Delete device and its tags
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: API token required
+        "404":
+          description: Unknown device
+        "503":
+          description: Config store unavailable
+
+  /api/v1/browse:
+    get:
+      tags: [browse]
+      summary: Browse OPC address space children
+      parameters:
+        - name: node_id
+          in: query
+          schema:
+            type: string
+        - name: device_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Browse nodes
+
+  /api/v1/expand:
+    post:
+      tags: [browse]
+      summary: Expand structure to leaf tags (SSE or JSON)
+      description: |
+        Walks the OPC (or sim) address space under `node_id` and returns leaf Variable tags.
+        Mutating method — requires API token when `LEVEL2_API_TOKEN` is set.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                node_id:
+                  type: string
+                parent_tag_id:
+                  type: string
+                max_depth:
+                  type: integer
+                device_id:
+                  type: string
+      responses:
+        "200":
+          description: Expanded tags / event stream
+        "401":
+          description: API token required
+
+  /api/v1/ws/stream:
+    get:
+      tags: [tags]
+      summary: WebSocket live sample stream
+      description: |
+        Upgrade to WebSocket. Server pushes one JSON Sample per message.
+        Optional filter: repeated `tag_id` query and/or comma-separated `tag_ids`.
+        Without a filter, all Live samples are broadcast (backward compatible).
+        Client may send `{"subscribe":["a","b"]}` (or `tag_ids`) to replace the filter.
+        When `LEVEL2_API_TOKEN` is set, pass Bearer / X-API-Token / `?token=`.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - name: tag_id
+          in: query
+          description: Repeatable allow-list of tag ids
+          schema:
+            type: string
+          style: form
+          explode: true
+        - name: tag_ids
+          in: query
+          description: Comma-separated tag ids (merged with tag_id)
+          schema:
+            type: string
+            example: a,b,c
+        - name: token
+          in: query
+          description: API token when header auth is awkward for WS clients
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols
+        "401":
+          description: API token configured and missing/wrong
+
+  /api/v1/diagnostics/logs:
+    get:
+      tags: [diagnostics]
+      summary: Diagnostics ring buffer
+      parameters:
+        - name: category
+          in: query
+          description: |
+            Primary: `all` | `opc_read` | `opc_write` | `db_write`.
+            Aliases accepted by the server: `opc`→opc_read, `write`→opc_write, `db`→db_write.
+          schema:
+            type: string
+            enum: [all, opc_read, db_write, opc_write, opc, write, db]
+        - name: errors_only
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Log entries
+    delete:
+      tags: [diagnostics]
+      summary: Clear diagnostics ring buffer
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: "{status: cleared}"
+        "401":
+          description: API token required
+
+  /api/v1/diagnostics/reset:
+    post:
+      tags: [diagnostics]
+      summary: Clear ring log and Overview drop counters
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: "{status: reset}"
+        "401":
+          description: API token required
+
+  /api/v1/diagnostics/capacity:
+    get:
+      tags: [diagnostics]
+      summary: DB size, growth ETA, capacity policy fields, spool metrics
+      description: |
+        Includes `capacity_percent`, `full_policy`, `limit_bytes`, `used_over_limit`, and spool metrics.
+        See docs/db-capacity-policy.md — `drop_oldest` may spool while trimming (`ErrCapacityBusy`).
+      responses:
+        "200":
+          description: Capacity JSON (database_size_bytes, free_bytes, used_over_limit, metrics, …)
+
+  /api/v1/database/status:
+    get:
+      tags: [database]
+      summary: Historian connection / pool status
+      responses:
+        "200":
+          description: connected, ping_ok, versions, pool stats, url_masked
+
+  /api/v1/database/capacity-policy:
+    get:
+      tags: [database]
+      summary: Capacity percent and full-disk policy
+      description: |
+        `full_policy`: `stop` (no spool), `drop_oldest` (trim + spool while busy),
+        `rotate` (stub=stop), `expand_limit` (user raises percent; until then like stop).
+      responses:
+        "200":
+          description: capacity_percent, full_policy, limit/disk fields when DB present
+    put:
+      tags: [database]
+      summary: Persist capacity policy to YAML (+ live historian)
+      description: |
+        Persists `database.capacity_percent` / `database.full_policy` via the config store.
+        `drop_oldest`: proactive trim near 90% of limit; while still over hard limit but trim
+        can progress, flush returns busy and the collector spools (no halt / no in-flight loss).
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                capacity_percent:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                full_policy:
+                  type: string
+                  enum: [stop, drop_oldest, rotate, expand_limit]
+                  description: |
+                    stop = skip WriteBatch, no spool; drop_oldest = trim chunks, spool on busy;
+                    rotate = Phase 2 stub (same as stop); expand_limit = raise slider (else stop).
+      responses:
+        "200":
+          description: Saved policy
+        "400":
+          description: Invalid percent/policy
+        "401":
+          description: API token required
+        "503":
+          description: Config store unavailable
+
+  /api/v1/database/wipe-samples:
+    post:
+      tags: [database]
+      summary: Wipe historian samples (lab)
+      description: |
+        Requires `?confirm=wipe`. Truncates Timescale samples, clears Live, re-seeds from Live snapshot.
+        Optional body `{"clear_tags":true}` also clears monitored tags on every device.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [wipe]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clear_tags:
+                  type: boolean
+      responses:
+        "200":
+          description: Wipe result
+        "400":
+          description: Missing confirm=wipe
+        "401":
+          description: API token required
+        "503":
+          description: Historian not configured
+
+  /api/v1/status/summary:
+    get:
+      tags: [diagnostics]
+      summary: Overview status counters
+      responses:
+        "200":
+          description: |
+            Summary JSON. Includes `tags_simulated` (per-tag simulate count, or all
+            enabled under legacy global / sim browser), `tag_simulation` / `sim_browser`
+            (legacy global master; never auto-enabled on disconnect), quality counts
+            (stale Good on disconnected devices counted as bad except for tags with
+            simulate=true), and ready_detail.
+
+  /api/v1/tag-simulation:
+    get:
+      tags: [diagnostics]
+      summary: Legacy global master preference + tags_simulated count
+      responses:
+        "200":
+          description: enabled/active/sim_browser/tags_simulated/restart_required
+    put:
+      tags: [diagnostics]
+      summary: Persist legacy global tag_simulation (recreate collector to apply)
+      description: |
+        Prefer per-tag `simulate` (PATCH / bulk simulate). This legacy master pauses OPC collect
+        for all enabled tags. Requires collector recreate to apply. Auth when token set.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated preference; restart_required when process not yet matching
+        "401":
+          description: API token required
+        "503":
+          description: Config store unavailable
+
+  /api/v1/devices/{id}/tags:
+    parameters:
+      - $ref: "#/components/parameters/DeviceID"
+    post:
+      tags: [tags]
+      summary: Upsert one tag on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Tag"
+      responses:
+        "200":
+          description: Upserted tag
+        "400":
+          description: Invalid tag
+        "401":
+          description: API token required
+        "503":
+          description: Config unavailable
+    delete:
+      tags: [tags]
+      summary: Delete all tags on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Cleared
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags/{tagId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceID"
+      - name: tagId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [tags]
+      summary: Upsert tag by path tagId
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Tag"
+      responses:
+        "200":
+          description: Upserted
+        "400":
+          description: Invalid
+        "401":
+          description: API token required
+    patch:
+      tags: [tags]
+      summary: Partial update of tag flags (simulate, writable, enabled)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                simulate:
+                  type: boolean
+                writable:
+                  type: boolean
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated tag
+        "401":
+          description: API token required
+        "404":
+          description: Device or tag not found
+    delete:
+      tags: [tags]
+      summary: Delete one tag
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: API token required
+        "404":
+          description: Not found
+
+  /api/v1/devices/{id}/tags/bulk:
+    post:
+      tags: [tags]
+      summary: Bulk upsert tags on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tags:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Tag"
+      responses:
+        "200":
+          description: Bulk result
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags/sync:
+    post:
+      tags: [tags]
+      summary: Overwrite datatypes from OPC DataType Attribute
+      description: See docs/opc-datatype-sync.md. Empty tag_ids = all tags on device.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Sync result
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags/import:
+    post:
+      tags: [tags]
+      summary: Import plant-format Excel tag list
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+        - name: replace
+          in: query
+          schema:
+            type: string
+            description: "1 to replace existing tags"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import summary
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags.xlsx:
+    get:
+      tags: [tags]
+      summary: Export plant-format tag list (.xlsx)
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "200":
+          description: Excel workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /api/v1/devices/{id}/tags/simulate:
+    post:
+      tags: [tags]
+      summary: Bulk enable/disable per-tag simulation on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [simulate]
+              properties:
+                simulate:
+                  type: boolean
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Empty or omitted with all=true → all tags on device
+                all:
+                  type: boolean
+                  description: When true, ignore tag_ids and update every tag on the device
+      responses:
+        "200":
+          description: "{device_id, simulate, updated, tags_simulated}"
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags/writable:
+    post:
+      tags: [tags]
+      summary: Bulk enable/disable per-tag writable on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [writable]
+              properties:
+                writable:
+                  type: boolean
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Empty or omitted with all=true → all tags on device
+                all:
+                  type: boolean
+                  description: When true, ignore tag_ids and update every tag on the device
+      responses:
+        "200":
+          description: "{device_id, writable, updated}"
+        "401":
+          description: API token required
+
+  /api/v1/tags/simulate:
+    post:
+      tags: [tags]
+      summary: Bulk enable/disable simulation across devices
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [simulate]
+              properties:
+                simulate:
+                  type: boolean
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+                all:
+                  type: boolean
+                device_id:
+                  type: string
+                  description: Optional device scope
+      responses:
+        "200":
+          description: "{simulate, updated, tags_simulated}"
+        "401":
+          description: API token required
+
+  /api/v1/project.xlsx:
+    get:
+      tags: [project]
+      summary: Export Project.xlsx (Servers + Tags)
+      responses:
+        "200":
+          description: Excel workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /api/v1/project/preview:
+    post:
+      tags: [project]
+      summary: Preview project import without applying
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Preview diff summary
+        "401":
+          description: API token required
+
+  /api/v1/project/import:
+    post:
+      tags: [project]
+      summary: Import Project.xlsx (merge or replace)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import applied
+        "401":
+          description: API token required
+
+  /api/v1/project/validate:
+    post:
+      tags: [project]
+      summary: Validate project / tags against Address Space
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Validation report
+        "401":
+          description: API token required
+
+  /api/v1/project/compare:
+    post:
+      tags: [project]
+      summary: Compare project config vs live Address Space (JSON)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Compare result JSON
+        "401":
+          description: API token required
+
+  /api/v1/project/compare.xlsx:
+    post:
+      tags: [project]
+      summary: Compare project → Excel report
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Excel report
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: API token required
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Shared LEVEL2_API_TOKEN (empty env = auth disabled)
+    ApiTokenHeader:
+      type: apiKey
+      in: header
+      name: X-API-Token
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Alias of X-API-Token
+
+  parameters:
+    TagID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    DeviceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Device id
+
+  schemas:
+    Sample:
+      type: object
+      required: [time, tag_id, quality]
+      properties:
+        time:
+          type: string
+          format: date-time
+        tag_id:
+          type: string
+        value_num:
+          type: number
+          nullable: true
+        value_text:
+          type: string
+          nullable: true
+        value_bool:
+          type: boolean
+          nullable: true
+        quality:
+          type: integer
+          description: "0=Good, 1=Bad"
+
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+        node_id:
+          type: string
+        path:
+          type: string
+        datatype:
+          type: string
+          enum: [bool, int64, uint, float64, string, datetime]
+        enabled:
+          type: boolean
+        interval_ms:
+          type: integer
+        writable:
+          type: boolean
+          description: |
+            Level2 allow-list for Write API (default false for new/omitted tags).
+            Existing YAML without the field loads as false — set true explicitly to allow writes.
+            Independent of Siemens AccessLevel.
+          default: false
+        simulate:
+          type: boolean
+          description: |
+            Per-tag synthetic samples (default false). Source of truth for which tags are mocked.
+            Real OPC collect continues for tags with simulate=false. When true, mock values
+            override that tag whether or not the PLC is connected. Never auto-enabled on disconnect.
+            Writes to a simulated tag return 409.
+          default: false
+        mode:
+          type: string
+          enum: [poll, subscribe]
+
+    TagValue:
+      type: object
+      properties:
+        device_id:
+          type: string
+        tag:
+          $ref: "#/components/schemas/Tag"
+        sample:
+          $ref: "#/components/schemas/Sample"
+        updated_at:
+          type: string
+          format: date-time
+        poll_avg_ms:
+          type: number
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+        endpoint:
+          type: string
+        security:
+          type: string
+        username:
+          type: string
+        poll_concurrency:
+          type: integer
+        tag_count:
+          type: integer
+        connected:
+          type: boolean
+
+    DeviceInput:
+      type: object
+      description: Device create/update body (tags optional on create)
+      properties:
+        id:
+          type: string
+        endpoint:
+          type: string
+        security:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        poll_concurrency:
+          type: integer
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+
+    WriteValueRequest:
+      type: object
+      properties:
+        value:
+          description: Preferred scalar (number, bool, or string)
+          oneOf:
+            - type: number
+            - type: boolean
+            - type: string
+        value_num:
+          type: number
+        value_text:
+          type: string
+        value_bool:
+          type: boolean
+        device_id:
+          type: string
+          description: Required when tag_id exists on multiple devices
+        verify:
+          type: boolean
+          description: When true, OPC Read after Write; verified only if readback matches
+        verify_timeout_ms:
+          type: integer
+          default: 2000
+          maximum: 30000
+          description: Retry window for readback match (default 2000 ms)
+        optimistic:
+          type: boolean
+          default: true
+          description: Update Live+WS immediately on Write StatusOK (default true)
+      description: Provide exactly one of value | value_num | value_text | value_bool
+
+    WriteValueResponse:
+      type: object
+      properties:
+        tag_id:
+          type: string
+        device_id:
+          type: string
+        node_id:
+          type: string
+        status:
+          type: string
+          example: Good
+        written:
+          $ref: "#/components/schemas/Sample"
+        verified:
+          type: boolean
+          description: True only when verify was requested and OPC readback matched written value
+        observed:
+          allOf:
+            - $ref: "#/components/schemas/Sample"
+          description: Present when verify ran (success or mismatch)
+        error:
+          type: string
+          description: On verify failure responses (e.g. verify_failed)
+        message:
+          type: string
+          description: Human-readable verify failure detail
+
+    BatchWriteRequest:
+      type: object
+      required: [writes]
+      properties:
+        verify:
+          type: boolean
+          description: Default verify for all items (overridable per item)
+        verify_timeout_ms:
+          type: integer
+          default: 2000
+          maximum: 30000
+        optimistic:
+          type: boolean
+          default: true
+        writes:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [tag_id]
+            properties:
+              tag_id:
+                type: string
+              device_id:
+                type: string
+              value:
+                oneOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+              value_num:
+                type: number
+              value_text:
+                type: string
+              value_bool:
+                type: boolean
+              verify:
+                type: boolean
+              verify_timeout_ms:
+                type: integer
+              optimistic:
+                type: boolean
+
+    BatchWriteResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchWriteResult"
+        ok_count:
+          type: integer
+        fail_count:
+          type: integer
+
+    BatchWriteResult:
+      type: object
+      properties:
+        tag_id:
+          type: string
+        device_id:
+          type: string
+        node_id:
+          type: string
+        ok:
+          type: boolean
+        status:
+          type: string
+        written:
+          $ref: "#/components/schemas/Sample"
+        verified:
+          type: boolean
+        observed:
+          $ref: "#/components/schemas/Sample"
+        error:
+          type: string
+        http_status:
+          type: integer
+          description: Per-item status code equivalent (200/400/403/404/409/502)

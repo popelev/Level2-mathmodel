@@ -1,0 +1,27 @@
+# Level2-mathmodel lab compose — MUST NOT conflict with Level2.
+# - Host port 8090 (never 8080/8081)
+# - Joins external network smoke_default as a client only
+# - Never prune level2-collector / jenkins images
+# - Never `docker compose down` Level2 projects from this stack
+
+name: level2-mathmodel
+
+services:
+  mathmodel:
+    build:
+      context: ../..
+      dockerfile: deploy/platform/Dockerfile
+    image: level2-mathmodel:local
+    container_name: level2-mathmodel
+    ports:
+      - "8090:8090"
+    environment:
+      LEVEL2_API_URL: http://level2-collector:8080
+      MATHMODEL_PORT: "8090"
+    networks:
+      - smoke_default
+    restart: unless-stopped
+
+networks:
+  smoke_default:
+    external: true

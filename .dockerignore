@@ -1,0 +1,16 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/node_modules
+apps/web/dist
+apps/api/dist
+.venv
+venv
+.env
+.env.*
+*.md
+!services/engine/README.md
+agent-transcripts
+.cursor
