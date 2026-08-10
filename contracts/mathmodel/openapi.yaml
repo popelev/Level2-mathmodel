@@ -267,15 +267,23 @@ components:
 
     LocalVar:
       type: object
-      required: [id, name, value]
+      required: [id, name, type, value, source, updated_at]
       properties:
         id:
           type: string
         name:
           type: string
+        type:
+          type: string
+          enum: [num, bool, text]
+          description: Local scalar type (engine-owned only)
         value:
-          description: Scalar or structured local value (engine-owned only)
+          description: Value matching type (num|bool|text); null allowed
           nullable: true
+        source:
+          type: string
+          enum: [planner, operator, model]
+          description: Who last wrote the variable (never Level2/PLC)
         unit:
           type: string
         description:
@@ -286,14 +294,20 @@ components:
 
     LocalVarInput:
       type: object
-      required: [id, name]
+      required: [id, name, type, source]
       properties:
         id:
           type: string
         name:
           type: string
+        type:
+          type: string
+          enum: [num, bool, text]
         value:
           nullable: true
+        source:
+          type: string
+          enum: [planner, operator, model]
         unit:
           type: string
         description:

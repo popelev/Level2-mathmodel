@@ -1,19 +1,19 @@
-"""Wave 1 stubs: LocalVarStore interface exists but is not implemented yet."""
+"""LocalVarStore public interface smoke."""
 
 from __future__ import annotations
 
-import pytest
-
-from level2_mathmodel.local_vars import LocalVarStore
+from level2_mathmodel.local_vars import LocalVarStore, LocalVariablesStore
 
 
-def test_list_not_implemented_yet() -> None:
+def test_store_alias() -> None:
+    assert LocalVariablesStore is LocalVarStore
+
+
+def test_crud_methods_exist() -> None:
     store = LocalVarStore()
-    with pytest.raises(NotImplementedError):
-        store.list()
-
-
-def test_upsert_not_implemented_yet() -> None:
-    store = LocalVarStore()
-    with pytest.raises(NotImplementedError):
-        store.upsert({"id": "x", "name": "X", "value": 1})
+    assert callable(store.list)
+    assert callable(store.get)
+    assert callable(store.create)
+    assert callable(store.replace)
+    assert callable(store.upsert)
+    assert callable(store.delete)
