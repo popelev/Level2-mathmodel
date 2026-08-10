@@ -22,7 +22,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}${text ? `: ${text}` : ""}`);
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text) as { detail?: string; error?: string };
+      if (parsed.detail || parsed.error) {
+        detail = [parsed.error, parsed.detail].filter(Boolean).join(": ");
+      }
+    } catch {
+      /* keep raw text */
+    }
+    throw new Error(
+      `${res.status} ${res.statusText}${detail ? `: ${detail}` : ""}`,
+    );
   }
   if (res.status === 204) {
     return undefined as T;
@@ -34,10 +45,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.text()) as T;
 }
 
+/**
+ * Client for mathmodel OpenAPI routes served by the FastAPI engine
+ * (lab image on :8090). Paths must match `services/engine` — not mock-only BFF extras.
+ */
 export const api = {
   healthz: () => request<string>("/healthz"),
   readyz: () => request<ReadyStatus>("/readyz"),
   status: () => request<EngineStatus>("/api/v1/status"),
+  /** Engine: GET /api/v1/live/inputs (Level2 read-only projection). */
   liveInputs: () => request<LiveInputsSummary>("/api/v1/live/inputs"),
   listLocalVars: () => request<LocalVar[]>("/api/v1/local-vars"),
   updateLocalVar: (id: string, body: LocalVarInput) =>

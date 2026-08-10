@@ -14,6 +14,7 @@ export function LiveInputsPage() {
       setData(await api.liveInputs());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -27,7 +28,8 @@ export function LiveInputsPage() {
     <section className="panel">
       <h2>Live inputs</h2>
       <p className="lead">
-        Read-only projection of Level2 tags (BFF mock data, no PLC writes).
+        Read-only projection from Level2 via engine{" "}
+        <code>GET /api/v1/live/inputs</code> (no PLC writes).
       </p>
 
       <div className="toolbar">
@@ -36,7 +38,8 @@ export function LiveInputsPage() {
         </button>
         {data && (
           <span className="muted">
-            source: {data.source} · updated: {data.updated_at}
+            source: {data.source} · tags: {data.tag_count ?? data.tags.length} ·
+            updated: {data.updated_at}
           </span>
         )}
       </div>
@@ -44,7 +47,11 @@ export function LiveInputsPage() {
       {loading && <p className="muted">loading…</p>}
       {error && <p className="error">{error}</p>}
 
-      {data && (
+      {data && data.tags.length === 0 && !loading && !error && (
+        <p className="muted">No live tags returned from Level2.</p>
+      )}
+
+      {data && data.tags.length > 0 && (
         <table className="data">
           <thead>
             <tr>
@@ -57,7 +64,7 @@ export function LiveInputsPage() {
           </thead>
           <tbody>
             {data.tags.map((tag) => (
-              <tr key={tag.tag_id}>
+              <tr key={`${tag.device_id ?? ""}:${tag.tag_id}`}>
                 <td className="mono">{tag.tag_id}</td>
                 <td className="mono">{tag.device_id ?? "—"}</td>
                 <td className="mono">

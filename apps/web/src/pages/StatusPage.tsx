@@ -38,7 +38,7 @@ export function StatusPage() {
     <section className="panel">
       <h2>Connection status</h2>
       <p className="lead">
-        Checking mock BFF against OpenAPI (`/healthz`, `/readyz`, `/api/v1/status`).
+        Checking engine OpenAPI (`/healthz`, `/readyz`, `/api/v1/status`).
       </p>
 
       <div className="toolbar">

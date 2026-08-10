@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from level2_mathmodel.api.bindings import router as bindings_router
 from level2_mathmodel.api.imports import router as imports_router
+from level2_mathmodel.api.live import router as live_router
 from level2_mathmodel.api.local_vars import router as local_vars_router
 from level2_mathmodel.api.plan import router as plan_router
 from level2_mathmodel.level2_adapter import Level2Client
@@ -92,5 +93,6 @@ def create_app(
     app.include_router(plan_router)
     app.include_router(imports_router)
     app.include_router(bindings_router)
+    app.include_router(live_router)
     _mount_web_ui(app)
     return app

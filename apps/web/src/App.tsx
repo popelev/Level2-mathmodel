@@ -23,7 +23,7 @@ export function App() {
       <header className="app-header">
         <div>
           <h1>Level2 Mathmodel</h1>
-          <p>Wave 1 — UI + mock BFF (no live engine/Level2)</p>
+          <p>Mathmodel UI — engine API on this host (port 8090)</p>
         </div>
       </header>
 
