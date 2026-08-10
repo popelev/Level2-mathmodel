@@ -1,8 +1,9 @@
 /**
- * Placeholder BFF entry — Wave 0 scaffold only.
- * Runtime HTTP API is owned by services/engine (Python).
+ * TypeScript BFF placeholder — Wave 1 mock server entry.
+ * Runtime mocks: `npm run start` → src/server.ts (OpenAPI-shaped).
  */
-export const serviceName = "level2-mathmodel-api-placeholder";
+export { startServer } from "./server.js";
+export const serviceName = "level2-mathmodel-api-mock";
 
 export function ping(): string {
   return "ok";
