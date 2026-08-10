@@ -10,7 +10,7 @@ from level2_mathmodel.api.app import create_app
 def test_create_app_is_fastapi() -> None:
     app = create_app()
     assert isinstance(app, FastAPI)
-    paths = {route.path for route in app.routes}
+    paths = set(app.openapi()["paths"])
     assert "/healthz" in paths
     assert "/api/v1/local-vars" in paths
     assert "/api/v1/status" in paths
