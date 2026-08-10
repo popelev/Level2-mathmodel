@@ -165,7 +165,9 @@ paths:
       tags: [imports]
       summary: Import tags from Level2 into catalog
       description: |
-        Read-only fetch via Level2Client (`GET /api/v1/devices`, `GET /api/v1/tags`).
+        Read-only fetch via Level2Client preferring
+        `GET /api/v1/integration/tag-catalog` (OpenAPI 1.4.0+).
+        Falls back to `GET /api/v1/devices` + `GET /api/v1/tags` only on HTTP 404.
         Upserts `TagCatalogEntry` rows keyed by `tag_id` + `device_id`.
         Requires `LEVEL2_API_URL`. Optional `LEVEL2_API_TOKEN` is forwarded as Bearer / X-API-Token.
       responses:
@@ -435,6 +437,19 @@ components:
           type: integer
         total:
           type: integer
+        source:
+          type: string
+          description: Import transport used
+          enum: [tag_catalog, tags_fallback]
+          example: tag_catalog
+        level2_api_version:
+          type: string
+          description: Present when source is tag_catalog
+          example: "1.4.0"
+        exported_at:
+          type: string
+          format: date-time
+          description: Present when source is tag_catalog
 
     Level2ImportPreview:
       allOf:

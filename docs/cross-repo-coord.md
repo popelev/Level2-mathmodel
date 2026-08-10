@@ -28,8 +28,9 @@ There is no direct agent-to-agent chat. Coordinate via Jira tickets and the pinn
 | [SCRUM-27](https://popelevfedor.atlassian.net/browse/SCRUM-27) | JSON error envelope | P2 |
 | [SCRUM-28](https://popelevfedor.atlassian.net/browse/SCRUM-28) | Idempotency-Key for writes | P2 (later, write phase) |
 | [SCRUM-29](https://popelevfedor.atlassian.net/browse/SCRUM-29) | Batch live GET by `tag_id` | P3 |
-| [SCRUM-30](https://popelevfedor.atlassian.net/browse/SCRUM-30) | Stable `GET /api/v1/integration/tag-catalog` export (**Level2 agent**, label `ai-agent-level2`) | P2 (nice; use `GET /tags` today) |
+| [SCRUM-30](https://popelevfedor.atlassian.net/browse/SCRUM-30) | Stable `GET /api/v1/integration/tag-catalog` export (**Level2 agent**, label `ai-agent-level2`) | Done — mathmodel consumes via SCRUM-32 |
 | [SCRUM-31](https://popelevfedor.atlassian.net/browse/SCRUM-31) | Mathmodel import catalog/bindings (**`cursor-mathmodel`**, label `ai-agent-cursor-mathmodel`) | P1 for consumer |
+| [SCRUM-33](https://popelevfedor.atlassian.net/browse/SCRUM-33) | Web UI import/bindings (`apps/web` + BFF; **`cursor-mathmodel`**) | P1 UI track |
 
 ## Local rules
 

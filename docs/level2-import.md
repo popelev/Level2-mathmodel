@@ -3,9 +3,8 @@
 Read-only import of Level2 tags into the mathmodel **catalog** and optional **bindings**.
 Model/plan outputs stay in **local vars** only. Mathmodel never writes to Level2/PLC.
 
-Platform asks for Level2 (stable export endpoint, etc.) are filed in Jira — see
-[`docs/cross-repo-coord.md`](cross-repo-coord.md) (**SCRUM-30**). This repo only
-consumes the existing Collector HTTP API until that lands. Do not modify the
+Level2 stable export is **SCRUM-30** (`GET /api/v1/integration/tag-catalog`,
+OpenAPI 1.4.0). Mathmodel consumes it read-only (SCRUM-32). Do not modify the
 Level2 git repository from mathmodel workstreams.
 
 ## Env
@@ -17,6 +16,12 @@ Level2 git repository from mathmodel workstreams.
 | `MATHMODEL_IMPORT_STATE_PATH` | Optional JSON file for catalog + bindings persistence |
 
 ## What we call on Level2 today
+
+Preferred (OpenAPI 1.4.0+):
+
+- `GET /api/v1/integration/tag-catalog`
+
+Fallback only when catalog returns HTTP 404 (older Level2):
 
 - `GET /api/v1/devices`
 - `GET /api/v1/tags`
@@ -57,3 +62,15 @@ If Level2 is unreachable or `LEVEL2_API_URL` is missing → **503** JSON:
 `role` defaults to `input`. Optional copper refs: `section_id`, `cell_id`, `signal`.
 
 Contract: [`contracts/mathmodel/openapi.yaml`](../contracts/mathmodel/openapi.yaml).
+
+## Web UI + BFF
+
+English UI tab **Import from Level2** (`apps/web`) talks to the same paths via the Vite proxy.
+
+| Layer | Role |
+|-------|------|
+| `services/engine` | Real import (Level2Client → catalog/bindings) |
+| `apps/api` | Mock BFF with the same routes; optional `MATHMODEL_ENGINE_URL` proxies import/bindings/status to the engine |
+| `apps/web` | Catalog table + bindings editor |
+
+See [`apps/web/README.md`](../apps/web/README.md).

@@ -17,16 +17,13 @@ BASE = "http://level2-collector:8080"
 
 
 def _fixture_client(level2_fixtures_dir: Path) -> Level2Client:
-    tags = json.loads((level2_fixtures_dir / "tags_list.json").read_text(encoding="utf-8"))
-    devices = json.loads(
-        (level2_fixtures_dir / "devices_list.json").read_text(encoding="utf-8")
+    catalog = json.loads(
+        (level2_fixtures_dir / "tag_catalog.json").read_text(encoding="utf-8")
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/v1/tags":
-            return httpx.Response(200, json=tags)
-        if request.url.path == "/api/v1/devices":
-            return httpx.Response(200, json=devices)
+        if request.url.path == "/api/v1/integration/tag-catalog":
+            return httpx.Response(200, json=catalog)
         return httpx.Response(404, text="missing")
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
@@ -54,6 +51,8 @@ def test_import_upserts_catalog(level2_fixtures_dir: Path) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["dry_run"] is False
+    assert body["source"] == "tag_catalog"
+    assert body["level2_api_version"] == "1.4.0"
     assert body["devices_seen"] == 1
     assert body["tags_fetched"] == 2
     assert body["inserted"] == 2
@@ -64,10 +63,41 @@ def test_import_upserts_catalog(level2_fixtures_dir: Path) -> None:
     rows = catalog.json()
     assert len(rows) == 2
     assert {x["tag_id"] for x in rows} == {"Cell.Current", "Cell.Voltage"}
+    assert rows[0]["raw"]["source"] == "level2_tag_catalog"
 
     again = client.post("/api/v1/imports/level2/tags")
     assert again.json()["updated"] == 2
     assert again.json()["inserted"] == 0
+
+
+def test_import_empty_tag_catalog(level2_fixtures_dir: Path) -> None:
+    empty = json.loads(
+        (level2_fixtures_dir / "tag_catalog_empty.json").read_text(encoding="utf-8")
+    )
+
+    def factory() -> Level2Client:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/v1/integration/tag-catalog":
+                return httpx.Response(200, json=empty)
+            return httpx.Response(404, text="missing")
+
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        return Level2Client(BASE, client=http)
+
+    client = TestClient(
+        create_app(
+            tag_import_store=TagImportStore(),
+            level2_client_factory=factory,
+        )
+    )
+    r = client.post("/api/v1/imports/level2/tags")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "tag_catalog"
+    assert body["devices_seen"] == 0
+    assert body["tags_fetched"] == 0
+    assert body["inserted"] == 0
+    assert body["total"] == 0
 
 
 def test_preview_does_not_save(level2_fixtures_dir: Path) -> None:
@@ -76,6 +106,7 @@ def test_preview_does_not_save(level2_fixtures_dir: Path) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["dry_run"] is True
+    assert body["source"] == "tag_catalog"
     assert body["tags_fetched"] == 2
     assert len(body["preview"]) == 2
     assert client.get("/api/v1/imports/level2/catalog").json() == []

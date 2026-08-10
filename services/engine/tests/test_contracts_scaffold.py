@@ -14,16 +14,18 @@ def test_pinned_level2_openapi_exists_and_loads(level2_openapi_path: Path) -> No
     assert "openapi:" in text
     doc = yaml.safe_load(text)
     assert doc["openapi"].startswith("3.")
-    assert doc["info"]["version"] == "1.2.1"
+    assert doc["info"]["version"] == "1.4.0"
     assert "paths" in doc
     assert "/healthz" in doc["paths"]
+    assert "/api/v1/integration/tag-catalog" in doc["paths"]
+    assert "TagCatalog" in doc["components"]["schemas"]
 
 
 def test_level2_version_note_mentions_pin() -> None:
     version_path = Path(__file__).resolve().parents[3] / "contracts" / "level2" / "VERSION"
     assert version_path.is_file()
     body = version_path.read_text(encoding="utf-8")
-    assert "1.2.1" in body
+    assert "1.4.0" in body
 
 
 def test_fixture_tags_list_loads(level2_fixtures_dir: Path) -> None:
@@ -34,6 +36,17 @@ def test_fixture_tags_list_loads(level2_fixtures_dir: Path) -> None:
     assert len(data) >= 1
     assert "tag" in data[0]
     assert data[0]["tag"]["id"]
+
+
+def test_fixture_tag_catalog_loads(level2_fixtures_dir: Path) -> None:
+    path = level2_fixtures_dir / "tag_catalog.json"
+    assert path.is_file()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["level2_api_version"] == "1.4.0"
+    assert isinstance(data["devices"], list)
+    assert isinstance(data["tags"], list)
+    assert data["tags"][0]["tag_id"]
+    assert data["tags"][0]["device_id"]
 
 
 def test_mathmodel_openapi_draft_exists(repo_root: Path) -> None:

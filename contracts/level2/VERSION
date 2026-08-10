@@ -1,15 +1,16 @@
 # Pinned Level2 Collector API contract
 #
-# Source: https://raw.githubusercontent.com/popelev/level2/main/api/openapi.yaml
-# Pinned version (info.version in openapi.yaml): 1.2.1
-# Pinned for: Level2-mathmodel Wave 0 scaffold (read-only client)
+# Source (lab): http://192.168.157.128:8080/api/v1/openapi.yaml
+# Upstream: https://raw.githubusercontent.com/popelev/level2/main/api/openapi.yaml
+# Pinned version (info.version in openapi.yaml): 1.4.0
+# Pinned for: SCRUM-32 tag-catalog import (read-only client)
 #
-# Refresh process (later waves):
-# 1. Download the upstream openapi.yaml into this directory
+# Refresh process:
+# 1. Download lab or upstream openapi.yaml into this directory
 # 2. Confirm info.version and update this note
 # 3. Adjust fixtures under contracts/level2/fixtures/ if schemas changed
 # 4. Re-run engine contract tests
 #
-LEVEL2_OPENAPI_VERSION=1.2.1
-SOURCE_URL=https://raw.githubusercontent.com/popelev/level2/main/api/openapi.yaml
+LEVEL2_OPENAPI_VERSION=1.4.0
+SOURCE_URL=http://192.168.157.128:8080/api/v1/openapi.yaml
 PINNED_FILE=openapi.yaml

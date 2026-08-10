@@ -124,6 +124,37 @@ def test_list_devices_from_fixture(level2_fixtures_dir: Path) -> None:
     assert devices[0]["connected"] is True
 
 
+def test_get_tag_catalog_from_fixture(level2_fixtures_dir: Path) -> None:
+    payload = _load_fixture(level2_fixtures_dir, "tag_catalog.json")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/v1/integration/tag-catalog"
+        return httpx.Response(200, json=payload)
+
+    with _make_client(handler) as client:
+        catalog = client.get_tag_catalog()
+    assert catalog["level2_api_version"] == "1.4.0"
+    assert catalog["exported_at"] == "2026-08-10T08:00:00Z"
+    assert len(catalog["devices"]) == 1
+    assert len(catalog["tags"]) == 2
+    assert catalog["tags"][0]["tag_id"] == "Cell.Current"
+    assert catalog["tags"][0]["device_id"] == "sim_device"
+
+
+def test_get_tag_catalog_empty(level2_fixtures_dir: Path) -> None:
+    payload = _load_fixture(level2_fixtures_dir, "tag_catalog_empty.json")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/integration/tag-catalog"
+        return httpx.Response(200, json=payload)
+
+    with _make_client(handler) as client:
+        catalog = client.get_tag_catalog()
+    assert catalog["devices"] == []
+    assert catalog["tags"] == []
+
+
 def test_get_history_minimal(level2_fixtures_dir: Path) -> None:
     payload = _load_fixture(level2_fixtures_dir, "history_samples.json")
 

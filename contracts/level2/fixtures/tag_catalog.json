@@ -1,0 +1,32 @@
+{
+  "exported_at": "2026-08-10T08:00:00Z",
+  "level2_api_version": "1.4.0",
+  "devices": [
+    {
+      "id": "sim_device",
+      "connected": true
+    }
+  ],
+  "tags": [
+    {
+      "tag_id": "Cell.Current",
+      "device_id": "sim_device",
+      "path": "Cell.Current",
+      "datatype": "float64",
+      "enabled": true,
+      "writable": false,
+      "interval_ms": 1000,
+      "node_id": "ns=2;s=Cell.Current"
+    },
+    {
+      "tag_id": "Cell.Voltage",
+      "device_id": "sim_device",
+      "path": "Cell.Voltage",
+      "datatype": "float64",
+      "enabled": true,
+      "writable": false,
+      "interval_ms": 1000,
+      "node_id": "ns=2;s=Cell.Voltage"
+    }
+  ]
+}

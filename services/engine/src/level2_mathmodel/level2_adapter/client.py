@@ -28,9 +28,10 @@ class Level2HTTPError(Level2Error):
 
 
 class Level2Client:
-    """Read-only client for Level2 Collector REST API (OpenAPI 1.2.1).
+    """Read-only client for Level2 Collector REST API (OpenAPI 1.4.0).
 
     Intentionally has no PUT/POST write helpers for tag values or devices.
+    Prefer ``get_tag_catalog`` for catalog import over ``list_tags``.
     """
 
     def __init__(
@@ -113,6 +114,25 @@ class Level2Client:
         data = response.json()
         if not isinstance(data, list):
             raise Level2Error("GET /api/v1/devices: expected JSON array")
+        return data
+
+    def get_tag_catalog(self) -> dict[str, Any]:
+        """GET /api/v1/integration/tag-catalog — flat export (OpenAPI 1.4.0+).
+
+        Returns the raw catalog object with ``exported_at``, ``level2_api_version``,
+        ``devices``, and ``tags`` (flat TagCatalogTag rows).
+        """
+        path = "/api/v1/integration/tag-catalog"
+        response = self._client.get(f"{self.base_url}{path}")
+        self._raise_for_status(response, f"GET {path}")
+        data = response.json()
+        if not isinstance(data, dict):
+            raise Level2Error(f"GET {path}: expected JSON object")
+        for key in ("exported_at", "level2_api_version", "devices", "tags"):
+            if key not in data:
+                raise Level2Error(f"GET {path}: missing field {key!r}")
+        if not isinstance(data["devices"], list) or not isinstance(data["tags"], list):
+            raise Level2Error(f"GET {path}: devices and tags must be arrays")
         return data
 
     def get_history(

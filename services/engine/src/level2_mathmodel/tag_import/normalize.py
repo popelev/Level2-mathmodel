@@ -11,11 +11,11 @@ def _utc_now_iso() -> str:
 
 
 def normalize_level2_tag_row(row: dict[str, Any], *, seen_at: str | None = None) -> dict[str, Any]:
-    """Map a Level2 TagValue (or flat export tag) into TagCatalogEntry.
+    """Map a Level2 TagValue (or flat catalog tag) into TagCatalogEntry.
 
     Supports:
-    - Current Collector shape: ``{device_id, tag: {...}, sample, ...}``
-    - Future integration export: flat ``{tag_id, device_id, path, ...}``
+    - Live tags shape: ``{device_id, tag: {...}, sample, ...}``
+    - Tag-catalog export: flat ``{tag_id, device_id, path, ...}``
     """
     if not isinstance(row, dict):
         raise ValueError("tag row must be an object")
@@ -58,7 +58,7 @@ def normalize_level2_tag_row(row: dict[str, Any], *, seen_at: str | None = None)
 
     # Keep a slim raw snapshot for debugging (not a Level2 write surface).
     entry["raw"] = {
-        "source": "level2_tags" if tag_obj is not None else "level2_export",
+        "source": "level2_tags" if tag_obj is not None else "level2_tag_catalog",
         "poll_avg_ms": row.get("poll_avg_ms"),
     }
     return entry

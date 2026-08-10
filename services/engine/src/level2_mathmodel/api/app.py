@@ -1,13 +1,15 @@
-"""FastAPI application — health + local-vars + plan + Level2 import."""
+"""FastAPI application — health + local-vars + plan + Level2 import + UI."""
 
 from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from level2_mathmodel.api.bindings import router as bindings_router
 from level2_mathmodel.api.imports import router as imports_router
@@ -21,6 +23,25 @@ SERVICE_NAME = "level2-mathmodel"
 SERVICE_VERSION = "0.2.0-draft"
 
 Level2ClientFactory = Callable[[], Level2Client]
+
+
+def _mount_web_ui(app: FastAPI) -> None:
+    """Serve built React UI from MATHMODEL_WEB_DIST when present (lab image)."""
+    raw = os.environ.get("MATHMODEL_WEB_DIST", "").strip()
+    if not raw:
+        return
+    dist = Path(raw)
+    index = dist / "index.html"
+    if not index.is_file():
+        return
+
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="web-assets")
+
+    @app.get("/", include_in_schema=False)
+    def web_index() -> FileResponse:
+        return FileResponse(index)
 
 
 def create_app(
@@ -48,6 +69,11 @@ def create_app(
     def healthz() -> str:
         return "ok"
 
+    @app.get("/readyz", tags=["health"])
+    def readyz() -> dict[str, Any]:
+        """UI/BFF-compatible readiness (engine process is up)."""
+        return {"ready": True, "service": SERVICE_NAME}
+
     @app.get("/api/v1/status", tags=["health"])
     def status() -> dict[str, Any]:
         local_store: LocalVarStore = app.state.local_vars
@@ -66,4 +92,5 @@ def create_app(
     app.include_router(plan_router)
     app.include_router(imports_router)
     app.include_router(bindings_router)
+    _mount_web_ui(app)
     return app
