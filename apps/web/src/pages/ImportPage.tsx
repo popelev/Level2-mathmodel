@@ -45,6 +45,11 @@ export function ImportPage() {
     }
   }
 
+  function pickCatalogRow(row: TagCatalogEntry) {
+    setTagId(row.tag_id);
+    setDeviceId(row.device_id);
+  }
+
   async function saveBinding(ev: FormEvent) {
     ev.preventDefault();
     if (!logicalName.trim() || !tagId.trim()) return;
@@ -92,8 +97,10 @@ export function ImportPage() {
     <section className="panel">
       <h2>Import from Level2</h2>
       <p className="lead">
-        Read-only catalog import from Level2 (`GET /tags`). Bindings map stable
-        tag_id to logical names. Model outputs stay in local variables.
+        Read-only catalog import via mathmodel API (
+        <code>POST /api/v1/imports/level2/tags</code>). Bindings map{" "}
+        <code>logical_name</code> → stable <code>tag_id</code>. Model outputs
+        stay in local variables.
       </p>
 
       <div className="toolbar">
@@ -119,6 +126,10 @@ export function ImportPage() {
       {error && <p className="error">{error}</p>}
 
       <h3 style={{ marginTop: "1.25rem" }}>Tag catalog</h3>
+      <p className="muted">
+        Click a row to fill the binding form. Columns: tag_id, device_id,
+        datatype, path.
+      </p>
       <table className="data">
         <thead>
           <tr>
@@ -126,22 +137,25 @@ export function ImportPage() {
             <th>device_id</th>
             <th>datatype</th>
             <th>path</th>
-            <th>enabled</th>
           </tr>
         </thead>
         <tbody>
           {catalog.length === 0 && (
             <tr>
-              <td colSpan={5}>No catalog entries yet.</td>
+              <td colSpan={4}>No catalog entries yet. Run Import from Level2.</td>
             </tr>
           )}
           {catalog.map((row) => (
-            <tr key={`${row.device_id}:${row.tag_id}`}>
+            <tr
+              key={`${row.device_id}:${row.tag_id}`}
+              className="clickable"
+              onClick={() => pickCatalogRow(row)}
+              title="Use this tag in the binding form"
+            >
               <td className="mono">{row.tag_id}</td>
               <td className="mono">{row.device_id}</td>
               <td>{row.datatype ?? "—"}</td>
               <td className="mono">{row.path ?? "—"}</td>
-              <td>{row.enabled === undefined ? "—" : String(row.enabled)}</td>
             </tr>
           ))}
         </tbody>
@@ -193,6 +207,7 @@ export function ImportPage() {
             value={logicalName}
             onChange={(e) => setLogicalName(e.target.value)}
             required
+            placeholder="e.g. cell_current"
           />
         </label>
         <label>
@@ -201,13 +216,24 @@ export function ImportPage() {
             value={tagId}
             onChange={(e) => setTagId(e.target.value)}
             required
+            list="catalog-tag-ids"
+            placeholder="Select from catalog or type"
           />
+          <datalist id="catalog-tag-ids">
+            {catalog.map((row) => (
+              <option
+                key={`${row.device_id}:${row.tag_id}`}
+                value={row.tag_id}
+              />
+            ))}
+          </datalist>
         </label>
         <label>
           device_id
           <input
             value={deviceId}
             onChange={(e) => setDeviceId(e.target.value)}
+            placeholder="optional"
           />
         </label>
         <label>

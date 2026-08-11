@@ -23,7 +23,10 @@ export function App() {
       <header className="app-header">
         <div>
           <h1>Level2 Mathmodel</h1>
-          <p>Mathmodel UI — engine API on this host (port 8090)</p>
+          <p>
+            Mathmodel UI — engine API on this host (port 8090); Import from
+            Level2 for catalog and bindings
+          </p>
         </div>
       </header>
 
