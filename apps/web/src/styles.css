@@ -188,6 +188,14 @@ table.data td.mono {
   font-family: var(--mono);
 }
 
+table.data tr.clickable {
+  cursor: pointer;
+}
+
+table.data tr.clickable:hover {
+  background: #f3f6f4;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -235,7 +243,8 @@ button:disabled {
 }
 
 .form-grid input,
-.form-grid textarea {
+.form-grid textarea,
+.form-grid select {
   font: inherit;
   border: 1px solid var(--line);
   border-radius: 6px;

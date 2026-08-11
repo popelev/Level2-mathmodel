@@ -1,6 +1,10 @@
 /**
- * Mock BFF implementing contracts/mathmodel/openapi.yaml (Wave 1).
- * Does not call live engine / Level2 — in-memory mocks only.
+ * BFF for contracts/mathmodel/openapi.yaml.
+ *
+ * Default: in-memory mocks (no live engine / Level2).
+ * Optional: set MATHMODEL_ENGINE_URL to proxy import/bindings
+ * (and status/health) to the real Python engine, which owns the
+ * production Level2 import implementation.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
@@ -23,6 +27,7 @@ import type {
 
 const PORT = Number(process.env.PORT ?? process.env.MATHMODEL_PORT ?? 8090);
 const HOST = process.env.HOST ?? "127.0.0.1";
+const ENGINE_URL = (process.env.MATHMODEL_ENGINE_URL ?? "").replace(/\/$/, "");
 
 const localVars = new Map<string, LocalVar>(
   createSeedLocalVars().map((v) => [v.id, v]),
@@ -74,16 +79,78 @@ function notFound(res: ServerResponse): void {
   send(res, 404, { error: "not_found" });
 }
 
-async function readJson<T>(req: IncomingMessage): Promise<T> {
+async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  return Buffer.concat(chunks);
+}
+
+async function readJson<T>(req: IncomingMessage): Promise<T> {
+  const raw = (await readBody(req)).toString("utf8").trim();
   if (!raw) {
     return {} as T;
   }
   return JSON.parse(raw) as T;
+}
+
+function shouldProxyToEngine(path: string): boolean {
+  if (!ENGINE_URL) return false;
+  return (
+    path.startsWith("/api/v1/imports/") ||
+    path.startsWith("/api/v1/bindings") ||
+    path === "/api/v1/status" ||
+    path === "/healthz" ||
+    path === "/readyz"
+  );
+}
+
+async function proxyToEngine(
+  req: IncomingMessage,
+  res: ServerResponse,
+  path: string,
+): Promise<void> {
+  const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
+  const target = `${ENGINE_URL}${path}${url.search}`;
+  const method = req.method ?? "GET";
+  const headers: Record<string, string> = {
+    Accept: req.headers.accept ?? "application/json",
+  };
+  if (req.headers["content-type"]) {
+    headers["Content-Type"] = String(req.headers["content-type"]);
+  }
+
+  let body: string | undefined;
+  if (method !== "GET" && method !== "HEAD") {
+    const buf = await readBody(req);
+    if (buf.length > 0) body = buf.toString("utf8");
+  }
+
+  try {
+    const upstream = await fetch(target, {
+      method,
+      headers,
+      body,
+    });
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    const contentType =
+      upstream.headers.get("content-type") ?? "application/json; charset=utf-8";
+    res.writeHead(upstream.status, {
+      "Content-Type": contentType,
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "X-Mathmodel-Bff-Mode": "engine-proxy",
+    });
+    res.end(buf);
+  } catch (err: unknown) {
+    const detail = err instanceof Error ? err.message : String(err);
+    send(res, 502, {
+      error: "engine_unavailable",
+      detail: `Failed to reach MATHMODEL_ENGINE_URL (${ENGINE_URL}): ${detail}`,
+    });
+  }
 }
 
 function parseLocalVarInput(body: LocalVarInput): LocalVar | null {
@@ -103,7 +170,7 @@ function parseLocalVarInput(body: LocalVarInput): LocalVar | null {
   };
 }
 
-async function handle(
+export async function handle(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -113,6 +180,11 @@ async function handle(
 
   if (method === "OPTIONS") {
     send(res, 204, "");
+    return;
+  }
+
+  if (shouldProxyToEngine(path)) {
+    await proxyToEngine(req, res, path);
     return;
   }
 
@@ -336,6 +408,9 @@ export function startServer(): void {
   });
 
   server.listen(PORT, HOST, () => {
-    console.log(`mathmodel mock BFF listening on http://${HOST}:${PORT}`);
+    const mode = ENGINE_URL
+      ? `engine-proxy → ${ENGINE_URL}`
+      : "mock (set MATHMODEL_ENGINE_URL to use real engine)";
+    console.log(`mathmodel BFF listening on http://${HOST}:${PORT} [${mode}]`);
   });
 }
